@@ -88,7 +88,7 @@ while True:
     print("🔍 Scanning for new meme tokens...")
     try:
         tokens = fetch_tokens()
-        for token in tokens[:5]:  # Limit checks per scan
+        for token in tokens[:3]:  # Limit checks per scan
             address = token['address']
             if address not in posted_tokens:
                 info = fetch_token_data(address)
