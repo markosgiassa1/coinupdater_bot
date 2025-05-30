@@ -1,15 +1,12 @@
-
 import requests
 import time
 import json
+import os 
 
-# Your Telegram bot token and chat ID
-BOT_TOKEN = "7639604753:AAH6_rlQAFgoPr2jlShOA5SKgLT57Br_BxU"
-CHAT_ID = "7636990835"  # Your chat ID from /getUpdates
-
-# Your Solana wallet for donations
-DONATION_WALLET = "79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz"
-
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
+DONATION_WALLET = os.getenv("DONATION_WALLET"
+                            
 def send_telegram_message(msg, chat_id, reply_markup=None):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
