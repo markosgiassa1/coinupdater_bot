@@ -1,22 +1,26 @@
 
 import requests
 import time
+import json
 
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
-CHAT_ID = "YOUR_CHAT_ID_HERE"  # Replace with your chat ID
+# Your Telegram bot token and chat ID
+BOT_TOKEN = "7639604753:AAH6_rlQAFgoPr2jlShOA5SKgLT57Br_BxU"
+CHAT_ID = "7636990835"  # Your chat ID from /getUpdates
+
+# Your Solana wallet for donations
 DONATION_WALLET = "79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz"
 
-def send_telegram_message(chat_id, msg, reply_markup=None):
+def send_telegram_message(msg, chat_id, reply_markup=None):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": chat_id,
         "text": msg,
         "parse_mode": "Markdown",
-        "disable_web_page_preview": False
+        "disable_web_page_preview": False,
     }
     if reply_markup:
-        payload["reply_markup"] = reply_markup
-    requests.post(url, json=payload)
+        payload["reply_markup"] = json.dumps(reply_markup)
+    requests.post(url, data=payload)
 
 def fetch_tokens():
     url = "https://cache.jup.ag/tokens"
@@ -36,7 +40,7 @@ def format_token_msg(token, info):
     name = token['name']
     symbol = token['symbol']
     address = token['address']
-
+    
     price_sol = float(info.get("priceNative", 0))
     price_usd = float(info.get("priceUsd", 0))
     mcap = int(float(info.get("fdv", 0)))
@@ -55,31 +59,48 @@ def format_token_msg(token, info):
         f"💰 *Donate:* `{DONATION_WALLET}`"
     )
 
-def main():
-    posted_tokens = set()
-    refer_button = {
-        "inline_keyboard": [
-            [{"text": "Refer Friends", "callback_data": "refer_friends"}]
+posted_tokens = set()
+
+# Inline keyboard with Refer Friends and Join Group buttons
+inline_keyboard = {
+    "inline_keyboard": [
+        [
+            {
+                "text": "🔗 Refer Friends",
+                "switch_inline_query": "invite "
+            }
+        ],
+        [
+            {
+                "text": "📢 Join Our Group",
+                "url": "https://t.me/digistoryan"
+            }
         ]
-    }
+    ]
+}
 
-    while True:
-        print("🔍 Scanning for new meme tokens...")
-        try:
-            tokens = fetch_tokens()
-            for token in tokens[:5]:  # Limit checks per scan
-                address = token['address']
-                if address not in posted_tokens:
-                    info = fetch_token_data(address)
-                    if info:
-                        msg = format_token_msg(token, info)
-                        send_telegram_message(CHAT_ID, msg, reply_markup=refer_button)
-                        posted_tokens.add(address)
-                        time.sleep(3)
-        except Exception as e:
-            print("❌ Error:", e)
+# Send welcome message with inline buttons once when script starts
+welcome_text = (
+    "👋 Welcome to @coinupdater_bot!\n\n"
+    "Get the latest new meme tokens on Solana.\n"
+    "Use the buttons below to refer friends or join our group."
+)
+send_telegram_message(welcome_text, CHAT_ID, inline_keyboard)
 
-        time.sleep(180)  # Wait 3 minutes
+while True:
+    print("🔍 Scanning for new meme tokens...")
+    try:
+        tokens = fetch_tokens()
+        for token in tokens[:5]:  # Limit checks per scan
+            address = token['address']
+            if address not in posted_tokens:
+                info = fetch_token_data(address)
+                if info:
+                    msg = format_token_msg(token, info)
+                    send_telegram_message(msg, CHAT_ID, inline_keyboard)
+                    posted_tokens.add(address)
+                    time.sleep(3)
+    except Exception as e:
+        print("❌ Error:", e)
 
-if __name__ == "__main__":
-    main()
+    time.sleep(180)  # Wait 3 minutes
