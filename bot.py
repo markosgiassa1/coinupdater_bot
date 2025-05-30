@@ -2,13 +2,25 @@ import requests
 import time
 import json
 import os
+from collections import deque
 
 # Load environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 DONATION_WALLET = os.getenv("DONATION_WALLET")
 
-# Helper to send a Telegram message
+# Token cache with fixed memory size
+posted_tokens = deque(maxlen=250)
+
+# Inline keyboard
+inline_keyboard = {
+    "inline_keyboard": [
+        [{"text": "🔗 Refer Friends", "switch_inline_query": "invite "}],
+        [{"text": "📢 Join Our Group", "url": "https://t.me/digistoryan"}]
+    ]
+}
+
+# Send Telegram message
 def send_telegram_message(msg, chat_id, reply_markup=None):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
@@ -20,25 +32,23 @@ def send_telegram_message(msg, chat_id, reply_markup=None):
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
     try:
-        response = requests.post(url, data=payload)
-        response.raise_for_status()
-    except requests.RequestException as e:
-        print(f"❌ Failed to send message: {e}")
+        requests.post(url, data=payload, timeout=10)
+    except Exception as e:
+        print(f"❌ Send error: {e}")
 
-# Fetch all tokens from Jupiter and filter by meme keywords
+# Fetch meme tokens from Jupiter
 def fetch_tokens():
-    url = "https://cache.jup.ag/tokens"
     try:
-        res = requests.get(url, timeout=10)
+        res = requests.get("https://cache.jup.ag/tokens", timeout=10)
         res.raise_for_status()
-        tokens = res.json()
+        tokens = res.json()[:100]  # Limit token list to reduce memory
         meme_keywords = ['dog', 'pepe', 'cat', 'elon', 'moon', 'baby', 'inu']
         return [t for t in tokens if any(k in t['name'].lower() for k in meme_keywords)]
     except Exception as e:
-        print("❌ Token fetch error:", e)
+        print(f"❌ Token fetch error: {e}")
         return []
 
-# Get token price and data from DexScreener
+# Fetch token info from Dexscreener
 def fetch_token_data(address):
     url = f"https://api.dexscreener.com/latest/dex/pairs/solana/{address}"
     try:
@@ -46,15 +56,15 @@ def fetch_token_data(address):
         if res.status_code == 200:
             return res.json().get("pair", {})
     except Exception as e:
-        print(f"❌ Dex data error for {address}: {e}")
+        print(f"❌ Dex error: {e}")
     return {}
 
-# Format the token data into a message
+# Format the token message
 def format_token_msg(token, info):
     name = token['name']
     symbol = token['symbol']
     address = token['address']
-    
+
     price_sol = float(info.get("priceNative", 0))
     price_usd = float(info.get("priceUsd", 0))
     mcap = int(float(info.get("fdv", 0)))
@@ -73,53 +83,41 @@ def format_token_msg(token, info):
         f"💰 *Donate:* `{DONATION_WALLET}`"
     )
 
-# Buttons for Telegram inline keyboard
-inline_keyboard = {
-    "inline_keyboard": [
-        [{"text": "🔗 Refer Friends", "switch_inline_query": "invite "}],
-        [{"text": "📢 Join Our Group", "url": "https://t.me/digistoryan"}]
-    ]
-}
-
-# Welcome message (send once)
-welcome_text = (
-    "👋 Welcome to @coinupdater_bot!\n\n"
-    "Get the latest new meme tokens on Solana.\n"
-    "Use the buttons below to refer friends or join our group."
-)
-
-# Send once at startup
-try:
+# Send welcome message only once (file flag)
+if not os.path.exists("welcome_sent.flag"):
+    welcome_text = (
+        "👋 Welcome to @coinupdater_bot!\n\n"
+        "Get the latest new meme tokens on Solana.\n"
+        "Use the buttons below to refer friends or join our group."
+    )
     send_telegram_message(welcome_text, CHAT_ID, inline_keyboard)
-except Exception as e:
-    print("❌ Could not send welcome message:", e)
+    with open("welcome_sent.flag", "w") as f:
+        f.write("ok")
 
-# Keep track of tokens we already posted
-posted_tokens = set()
-
-# 🔁 Main loop
+# Main loop
+restart_counter = 0
 while True:
-    print("🔍 Scanning for new meme tokens...")
     try:
+        print("🔍 Scanning for new meme tokens...")
         tokens = fetch_tokens()
-        for token in tokens[:3]:  # Limit how many we process
+        for token in tokens[:3]:  # Only check a few per scan
             address = token['address']
             if address not in posted_tokens:
                 info = fetch_token_data(address)
                 if info:
                     msg = format_token_msg(token, info)
                     send_telegram_message(msg, CHAT_ID, inline_keyboard)
-                    posted_tokens.add(address)
+                    posted_tokens.append(address)
                     print(f"✅ Posted {token['symbol']}")
-
-                    # Sleep between each post to avoid spam
                     time.sleep(3)
 
-        # Memory guard: keep recent 250 tokens
-        if len(posted_tokens) > 500:
-            posted_tokens = set(list(posted_tokens)[-250:])
-    except Exception as e:
-        print("❌ Main loop error:", e)
+        restart_counter += 1
+        if restart_counter >= 100:
+            print("♻️ Restarting bot to reset memory usage.")
+            break  # Let Render auto-restart the process
 
-    # Sleep between full scans
-    time.sleep(180)
+        time.sleep(180)  # Wait 3 minutes between scans
+
+    except Exception as e:
+        print(f"❌ Main loop error: {e}")
+        time.sleep(10)
