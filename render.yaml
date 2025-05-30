@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: coinupdater
+    env: python
+    plan: free
+    buildCommand: ""
+    startCommand: python telegram_bot.py
