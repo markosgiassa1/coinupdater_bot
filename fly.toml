@@ -9,6 +9,12 @@ internal_port = 8080
 min_machines_running = 0
 processes = ["app"]
 
+app = "coinupdater-bot"
+primary_region = "atl"
+
+[build]
+  buildpacks = ["heroku/python"]
+  
 [[vm]]
 cpu_kind = "shared"
 cpus = 1
