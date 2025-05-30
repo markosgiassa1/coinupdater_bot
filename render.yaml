@@ -1,5 +1,5 @@
 services:
-  - type: web
+  - type: worker
     name: coinupdater
     env: python
     plan: free
