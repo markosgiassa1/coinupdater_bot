@@ -4,4 +4,4 @@ services:
     env: python
     plan: free
     buildCommand: ""
-    startCommand: python telegram_bot.py
+    startCommand: python bot.py
