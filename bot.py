@@ -5,7 +5,7 @@ import os
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-DONATION_WALLET = os.getenv("DONATION_WALLET"
+DONATION_WALLET = os.getenv("DONATION_WALLET")
                             
 def send_telegram_message(msg, chat_id, reply_markup=None):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
