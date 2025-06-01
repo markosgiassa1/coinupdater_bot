@@ -14,9 +14,9 @@ def home():
     return "✅ Meme Bot is Running"
 
 # === Bot Configuration ===
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
-DONATION_WALLET = os.getenv("DONATION_WALLET")
+BOT_TOKEN = "7639604753:AAH6_rlQAFgoPr2jlShOA5SKgLT57Br_BxU"
+CHAT_ID = "7636990835"
+DONATION_WALLET = "79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz"
 
 # Safety checks
 if not BOT_TOKEN or not CHAT_ID:
