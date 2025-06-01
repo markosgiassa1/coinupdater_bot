@@ -15,7 +15,7 @@ def home():
 
 # === Bot Configuration ===
 BOT_TOKEN = "7639604753:AAH6_rlQAFgoPr2jlShOA5SKgLT57Br_BxU"
-CHAT_ID = "7636990835"
+CHAT_ID = "7639604753"
 DONATION_WALLET = "79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz"
 
 # Safety checks
