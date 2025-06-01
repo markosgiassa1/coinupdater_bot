@@ -35,10 +35,14 @@ inline_keyboard = {
 def send_telegram_message(msg, chat_id, reply_markup=None):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
-        "chat_id": chat_id,
-        "text": msg,
-        "parse_mode": "Markdown",
-        "disable_web_page_preview": False,
+    "chat_id": CHAT_ID,
+    "text": "Hello from bot!",
+    "parse_mode": "Markdown",
+    "reply_markup": {
+        "inline_keyboard": [
+            [{"text": "🔗 Refer Friends", "switch_inline_query": "invite"}],
+            [{"text": "📢 Join Group", "url": "https://t.me/yourgroup"}]
+        ]
     }
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
