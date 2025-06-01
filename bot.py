@@ -6,7 +6,7 @@ from collections import deque
 
 # Load environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+CHAT_ID = int(os.getenv("CHAT_ID"))
 DONATION_WALLET = os.getenv("DONATION_WALLET")
 
 # Token cache with fixed memory size
