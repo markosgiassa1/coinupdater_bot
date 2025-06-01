@@ -1,15 +1,18 @@
-import os
 import requests
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = int(os.getenv("CHAT_ID"))
+BOT_TOKEN = "7639604753:AAH6_rlQAFgoPr2jlShOA5SKgLT57Br_BxU"
+CHAT_ID = "7639604753"
 
-msg = "Test message from Fly.io"
+msg = "✅ Test message from Python!"
 
 url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 payload = {
     "chat_id": CHAT_ID,
     "text": msg,
+    "parse_mode": "Markdown",
+    "disable_web_page_preview": True
 }
-resp = requests.post(url, data=payload)
-print(f"Status: {resp.status_code}, Response: {resp.text}")
+
+response = requests.post(url, json=payload)  # << use `json=` not `data=`
+print(response.status_code)
+print(response.text)
