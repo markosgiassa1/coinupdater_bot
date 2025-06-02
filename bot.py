@@ -21,7 +21,7 @@ DONATION_WALLET = "79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz"
 # Cache to prevent reposting
 posted_tokens = deque(maxlen=300)
 
-# Meme keywords to filter tokens by name
+# Meme-related keywords to detect tokens
 MEME_KEYWORDS = ['dog', 'pepe', 'cat', 'elon', 'moon', 'baby', 'inu', 'panda', 'bonk', 'rat', 'wagmi', 'meme']
 
 def send_telegram_message(text, reply_markup=None):
@@ -65,9 +65,9 @@ def fetch_token_data(address):
             data = resp.json().get("pair")
             return data
         else:
-            print(f"❌ DexScreener returned status {resp.status_code} for {address}")
+            print(f"❌ DexScreener status {resp.status_code} for {address}")
     except Exception as e:
-        print(f"❌ Exception fetching token data from DexScreener: {e}")
+        print(f"❌ DexScreener exception: {e}")
     return None
 
 def format_token_message(token, info):
@@ -84,48 +84,47 @@ def format_token_message(token, info):
         holders = info.get("holders", "?")
 
         msg = (
-            f"⏺️ *{name}* / `${symbol}`\n"
-            f"🆕 New Meme Token | 🟢 Launched recently\n"
-            f"💸 `{price_sol:.4f} SOL` (${price_usd:.2f})\n"
-            f"📊 Mkt Cap: `${fdv:,}` | 🔁 Vol 24h: `{volume_24h:,} SOL`\n"
-            f"💧 LP: `{liquidity:,} SOL` | 🪙 Holders: `{holders}`\n\n"
-            f"[📍 View on DexScreener](https://dexscreener.com/solana/{address})\n"
-            f"[🟢 Buy on Jupiter](https://jup.ag/swap/SOL-{address})\n"
-            f"💰 *Donate:* `79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz`"
+            f"🚀 *{name}* / `${symbol}`\n"
+            f"🆕 *New Meme Token* just dropped!\n"
+            f"💸 Price: `{price_sol:.4f} SOL` (${price_usd:.2f})\n"
+            f"📈 Mkt Cap: `${fdv:,}` | Vol: `{volume_24h:,} SOL`\n"
+            f"💧 LP: `{liquidity:,} SOL` | 👥 Holders: `{holders}`\n\n"
+            f"[📊 View on DexScreener](https://dexscreener.com/solana/{address})\n"
+            f"[🛒 Buy on Jupiter](https://jup.ag/swap/SOL-{address})\n"
+            f"❤️ Donate: `79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz`"
         )
     else:
         msg = (
-            f"⏺️ *{name}* / `${symbol}`\n"
-            f"⚠️ Price data not available\n\n"
-            f"[🟢 Buy on Jupiter](https://jup.ag/swap/SOL-{address})\n"
-            f"💰 *Donate:* `79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz`"
+            f"🚀 *{name}* / `${symbol}`\n"
+            f"⚠️ No price data available yet\n\n"
+            f"[🛒 Buy on Jupiter](https://jup.ag/swap/SOL-{address})\n"
+            f"❤️ Donate: `79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz`"
         )
     return msg
 
 def run_bot():
-    print("🚀 Meme Bot Started!")
+    print("🚀 Meme Bot Started")
 
     # Send welcome message once
     send_telegram_message(
-        "👋 Welcome to *Meme Token Updater Bot*! \n\nGet the latest new meme tokens on Solana.\n"
-        "Use the buttons below to refer friends or join our group.",
+        "👋 Welcome to *Meme Token Bot*! Stay updated with hot new Solana meme tokens.",
         reply_markup={
             "inline_keyboard": [
-                [{"text": "🔗 Refer Friends", "switch_inline_query": "invite "}],
                 [{"text": "📢 Join Our Group", "url": "https://t.me/digistoryan"}],
+                [{"text": "🔗 Refer Friends", "switch_inline_query": "invite "}],
             ]
         },
     )
 
     while True:
         tokens = fetch_tradable_tokens()
+
+        # Filter only new tokens
+        new_tokens = [t for t in tokens if t.get("address") and t.get("address") not in posted_tokens]
         count_sent = 0
 
-        for token in tokens[:10]:  # limit max 10 per iteration to avoid spam
-            address = token.get("address")
-            if not address or address in posted_tokens:
-                continue
-
+        for token in new_tokens[:10]:  # limit 10 per cycle
+            address = token["address"]
             info = fetch_token_data(address)
             msg = format_token_message(token, info)
             send_telegram_message(msg)
@@ -134,11 +133,12 @@ def run_bot():
             time.sleep(3)
 
         if count_sent == 0:
-            print("ℹ️ No new tokens found to send.")
+            print("ℹ️ No new tokens sent in this round.")
 
-        print("⏳ Waiting 3 minutes before next check...\n")
+        print("⏳ Waiting 3 minutes before next round...\n")
         time.sleep(180)
 
+# Start bot thread + web server
 if __name__ == "__main__":
     threading.Thread(target=run_bot, daemon=True).start()
     app.run(host="0.0.0.0", port=8080)
