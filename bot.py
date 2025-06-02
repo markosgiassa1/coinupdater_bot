@@ -44,11 +44,23 @@ def send_telegram_message(msg, reply_markup=None):
 
 def fetch_tokens():
     try:
-        res = requests.get("https://cache.jup.ag/tokens", timeout=10)
+        url = "https://api.dexscreener.com/latest/dex/pairs/solana"
+        res = requests.get(url, timeout=10)
         res.raise_for_status()
-        return res.json()[:100]
+        data = res.json()
+        pairs = data.get("pairs", [])[:100]
+
+        tokens = []
+        for pair in pairs:
+            if "baseToken" in pair:
+                tokens.append({
+                    "address": pair["baseToken"]["address"],
+                    "name": pair["baseToken"]["name"],
+                    "symbol": pair["baseToken"]["symbol"]
+                })
+        return tokens
     except Exception as e:
-        send_telegram_message(f"❌ Error fetching tokens:\n{e}")
+        send_telegram_message(f"❌ Error fetching Dex tokens:\n{e}")
         return []
 
 def fetch_token_data(address):
