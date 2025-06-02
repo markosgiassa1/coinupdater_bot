@@ -75,14 +75,14 @@ def format_token_msg(token):
     address = token.get('address', '')
     decimals = token.get('decimals', '?')
     logo = token.get('logoURI', '')
-    website = token.get('extensions', {}).get('website', 'N/A')
+    website = token.get('website', 'N/A')
 
     jupiter_link = f"https://jup.ag/swap?inputCurrency=SOL&outputCurrency={address}"
     dex_link = f"https://dexscreener.com/solana/{address}"
 
     msg = (
         f"⏺ | 🪙 *{name}* / `${symbol}`\n"
-        f"🆕 New Token Detected on *Solana* via Jupiter API\n"
+        f"🆕 New Token Detected on *Solana* via Dexscreener API\n"
         f"🆔 `{address}`\n"
         f"🔢 Decimals: `{decimals}`\n"
         f"🌐 Website: {website}\n"
