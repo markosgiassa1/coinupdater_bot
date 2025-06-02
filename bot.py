@@ -72,16 +72,22 @@ def format_token_msg(token, info):
     price_sol = float(info.get("priceNative", 0))
     price_usd = float(info.get("priceUsd", 0))
     mcap = int(float(info.get("fdv", 0)))
+
     volume = int(float(info.get("volume", {}).get("h24", 0)))
+    volume_display = f"{volume:,} SOL" if volume > 0 else "❌"
+
     liquidity = int(float(info.get("liquidity", {}).get("base", 0)))
-    holders = info.get("holders", "?")
+    liquidity_display = f"{liquidity:,} SOL" if liquidity > 0 else "❌"
+
+    holders = info.get("holders")
+    holders_display = f"{holders}" if holders not in (None, "?", 0) else "❌"
 
     return (
         f"⏺ | 🐶 *{name}* / `${symbol}`\n"
         f"🆕 New Meme Token | 🟢 Launched recently\n"
         f"💸 `{price_sol:.4f} SOL` (${price_usd:.2f})\n"
-        f"📊 Mkt Cap: `${mcap:,}` | 🔁 Vol 24h: `{volume:,} SOL`\n"
-        f"💧 LP: `{liquidity:,} SOL` | 🪙 Holders: `{holders}`\n\n"
+        f"📊 Mkt Cap: `${mcap:,}` | 🔁 Vol 24h: `{volume_display}`\n"
+        f"💧 LP: `{liquidity_display}` | 🪙 Holders: `{holders_display}`\n\n"
         f"[📍 View on DexScreener](https://dexscreener.com/solana/{address})\n"
         f"[🟢 Buy on Jupiter](https://jup.ag/swap/SOL-{address})\n"
         f"💰 *Donate:* `{DONATION_WALLET}`"
