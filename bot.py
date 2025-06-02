@@ -49,9 +49,12 @@ def send_telegram_message(msg, chat_id, reply_markup=None):
 def fetch_tokens():
     try:
         res = requests.get("https://cache.jup.ag/tokens", timeout=10)
-        tokens = res.json()[:100]
-        # Just return all tokens without filtering
-        return tokens
+        tokens = res.json()[:200]  # get more tokens to sort
+        # Filter tokens with alphabetical letters in the name
+        filtered = [t for t in tokens if re.search(r'[a-zA-Z]', t['name'])]
+        # Sort tokens by 'listedAt' descending if available, else keep order
+        filtered.sort(key=lambda x: x.get('listedAt', 0), reverse=True)
+        return filtered[:100]  # return top 100 newest tokens
     except Exception as e:
         print(f"❌ Token fetch error: {e}", flush=True)
         return []
