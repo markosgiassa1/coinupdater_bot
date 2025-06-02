@@ -17,7 +17,7 @@ BOT_TOKEN = "7639604753:AAH6_rlQAFgoPr2jlShOA5SKgLT57Br_BxU"
 CHAT_ID = "7636990835"
 DONATION_WALLET = "79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz"
 
-posted_tokens = deque(maxlen=1000
+posted_tokens = deque(maxlen=1000)
 
 inline_keyboard = {
     "inline_keyboard": [
