@@ -1,201 +1,178 @@
+from flask import Flask
+import threading
 import requests
-from solana.rpc.api import Client
 import time
-from telegram import (
-    InlineKeyboardButton, InlineKeyboardMarkup,
-    Update, InlineQueryResultArticle, InputTextMessageContent
-)
-from telegram.ext import (
-    Updater, CommandHandler, InlineQueryHandler, CallbackContext
-)
-import logging
-import uuid
+import json
+import os
+from collections import deque
 
-# === CONFIG ===
-API_KEY = "9867d904-fdcc-46b7-b5b1-c9ae880bd41d"
-RPC_URL = f"https://mainnet.helius-rpc.com/?api-key={API_KEY}"
+# === Web Server (for Fly.io health check) ===
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "✅ Coin Updater Bot is Running"
+
+# === Telegram Bot Configuration ===
 BOT_TOKEN = "7639604753:AAH6_rlQAFgoPr2jlShOA5SKgLT57Br_BxU"
-CHAT_ID = "7639604753"
+CHAT_ID = "7636990835"
+DONATION_WALLET = "79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz"
 
-client = Client(RPC_URL)
-posted_tokens = set()
+posted_tokens = deque(maxlen=250)  # Prevent reposting same tokens
 
-# Create inline keyboard with referral and group join buttons
-inline_keyboard = InlineKeyboardMarkup([
-    [InlineKeyboardButton("🔗 Refer Friends", switch_inline_query="invite ")],
-    [InlineKeyboardButton("📢 Join Our Group", url="https://t.me/digistoryan")]
-])
+inline_keyboard = {
+    "inline_keyboard": [
+        [{"text": "🔗 Refer Friends", "switch_inline_query": "invite "}],
+        [{"text": "💰 Donate", "url": f"https://t.me/donate?wallet={DONATION_WALLET}"}],  # Replace URL if you want real donation page
+        [{"text": "📢 Join Our Group", "url": "https://t.me/digistoryan"}]
+    ]
+}
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-
-logger = logging.getLogger(__name__)
-
-def get_token_metadata(mint):
-    url = f"https://mainnet.helius-rpc.com/v0/tokens/metadata?api-key={API_KEY}"
+# === Telegram Message Sender ===
+def send_telegram_message(msg, chat_id, reply_markup=None):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": msg,
+        "parse_mode": "Markdown",
+        "disable_web_page_preview": False,
+    }
+    if reply_markup:
+        payload["reply_markup"] = json.dumps(reply_markup)
     try:
-        resp = requests.post(url, json={"mintAccounts": [mint]}, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            if isinstance(data, list) and len(data) > 0:
-                return data[0]
-        logger.warning(f"No metadata found for mint {mint}")
-        return None
+        requests.post(url, data=payload, timeout=10)
     except Exception as e:
-        logger.error(f"Error fetching metadata for {mint}: {e}")
-        return None
+        print(f"❌ Send error: {e}", flush=True)
 
-def get_largest_accounts(mint):
+# === Solana Token Fetcher ===
+def fetch_tokens():
     try:
-        resp = client.get_token_largest_accounts(mint)
-        if resp.get("result"):
-            return resp["result"]["value"]
+        url = "https://api.dexscreener.com/latest/dex/pairs/solana"
+        res = requests.get(url, timeout=10)
+        res.raise_for_status()
+        data = res.json()
+        pairs = data.get("pairs", [])
+
+        solana_tokens = []
+        for pair in pairs:
+            base = pair.get("baseToken", {})
+            quote = pair.get("quoteToken", {})
+
+            # Filter valid SPL token addresses (usually > 32 chars)
+            if not base.get("address") or len(base["address"]) < 32:
+                continue
+
+            # Skip wrapped SOL, WSOL, USDC, etc.
+            symbol = base.get("symbol", "").lower()
+            if symbol in ["sol", "wsol", "usdc", "usdt"]:
+                continue
+
+            solana_tokens.append({
+                "address": base["address"],
+                "name": base["name"],
+                "symbol": base["symbol"]
+            })
+
+        return solana_tokens
+
+    except Exception as e:
+        send_telegram_message(f"❌ Error fetching Solana tokens:\n{e}", CHAT_ID)
         return []
-    except Exception as e:
-        logger.error(f"Error fetching largest accounts for {mint}: {e}")
-        return []
 
-def get_supply(mint):
+# === Token Detail Fetcher ===
+def fetch_token_data(address):
+    url = f"https://api.dexscreener.com/latest/dex/pairs/solana/{address}"
     try:
-        resp = client.get_token_supply(mint)
-        if resp.get("result"):
-            return resp["result"]["value"]
-        return {}
+        res = requests.get(url, timeout=10)
+        if res.status_code == 200:
+            return res.json().get("pair", {})
     except Exception as e:
-        logger.error(f"Error fetching supply for {mint}: {e}")
-        return {}
+        print(f"❌ Dex error: {e}", flush=True)
+    return {}
 
-def format_token_message(mint):
-    meta = get_token_metadata(mint)
-    if not meta:
-        return f"⚠️ No metadata found for token `{mint}`"
+# === Token Info Formatter ===
+def format_token_msg(token, info):
+    name = token.get('name', '?')
+    symbol = token.get('symbol', '?')
+    address = token.get('address', '?')
 
-    supply = get_supply(mint)
-    holders = get_largest_accounts(mint)
+    try:
+        price_sol = float(info.get("priceNative", 0))
+        price_usd = float(info.get("priceUsd", 0))
+        mcap = int(float(info.get("fdv", 0)))
+        volume = int(float(info.get("volume", {}).get("h24", 0)))
+        liquidity = int(float(info.get("liquidity", {}).get("base", 0)))
+        holders = info.get("holders", "?")
+    except:
+        price_sol, price_usd, mcap, volume, liquidity = 0, 0, 0, 0, 0
+        holders = "?"
 
-    decimals = int(supply.get("decimals", 0))
-    amount_raw = int(supply.get("amount", 0)) if supply.get("amount") else 0
-    total_supply = amount_raw / (10 ** decimals) if decimals else 0
-
-    holders_str = ""
-    for h in holders[:5]:
-        amt_raw = int(h.get("amount", 0))
-        amt = amt_raw / (10 ** decimals) if decimals else 0
-        holders_str += f"- `{h.get('address', '')[:8]}...`: {amt:.2f}\n"
-
-    offchain = meta.get('offChainData') or {}
-
-    msg = (
-        f"🆕 *New Solana Token Detected!*\n\n"
-        f"📛 *Name:* {meta.get('name', 'N/A')}\n"
-        f"💠 *Symbol:* {meta.get('symbol', 'N/A')}\n"
-        f"🔗 [Solana Explorer](https://explorer.solana.com/address/{mint})\n\n"
-        f"📦 *Total Supply:* {total_supply:,.2f}\n"
-        f"🔢 *Decimals:* {decimals}\n\n"
-        f"🏦 *Top Holders:*\n{holders_str}\n"
-        f"🌐 *Website:* {offchain.get('external_url', 'N/A')}\n"
-        f"📝 *Description:* {offchain.get('description', 'N/A')}\n"
-        f"🖼 *Image:* {offchain.get('image', 'N/A')}"
+    return (
+        f"⏺ | 🪙 *{name}* / `${symbol}`\n"
+        f"🆕 New Token Detected on *Solana*\n"
+        f"💸 `{price_sol:.4f} SOL` (${price_usd:.2f})\n"
+        f"📊 Mkt Cap: `${mcap:,}` | 🔁 24h Vol: `{volume:,} SOL`\n"
+        f"💧 LP: `{liquidity:,} SOL` | 🪙 Holders: `{holders}`\n\n"
+        f"[📍 View on DexScreener](https://dexscreener.com/solana/{address})\n"
+        f"[🟢 Buy on Jupiter](https://jup.ag/swap/SOL-{address})\n\n"
+        f"💰 *Donate:* `{DONATION_WALLET}`"
     )
-    return msg
 
-def get_recent_solana_tokens():
-    url = "https://quote-api.jup.ag/v1/tokens"
-    try:
-        resp = requests.get(url, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            tokens = []
-            for token in data.get('tokens', []):
-                if token.get('chainId') == 101:  # 101 = Solana Mainnet
-                    tokens.append(token['address'])
-            return tokens
-        else:
-            logger.warning(f"Jupiter API error: {resp.status_code}")
-            return []
-    except Exception as e:
-        logger.error(f"Exception in fetching tokens from Jupiter: {e}")
-        return []
-
-def start(update: Update, context: CallbackContext):
-    """Send a welcome message with referral info on /start"""
-    user = update.effective_user
-    msg = (
-        f"👋 Hi {user.first_name if user else 'there'}!\n\n"
-        "Welcome to the Solana Token Bot.\n"
-        "I will keep you updated about new Solana tokens detected on-chain.\n\n"
-        "Use the 🔗 Refer Friends button below to invite friends and grow the community!\n\n"
-        "Join our group for updates and discussion:"
-    )
-    update.message.reply_text(msg, reply_markup=inline_keyboard)
-
-def inlinequery(update: Update, context: CallbackContext):
-    """Handle inline queries for referral button"""
-    query = update.inline_query.query.lower()
-
-    results = []
-    if query.startswith("invite"):
-        # Provide a referral invite message
-        invite_text = (
-            "Join this awesome Solana token tracker bot! Stay updated with new tokens and get exclusive info. "
-            "Use this link to start: https://t.me/YourBotUsername"
-        )
-        results.append(
-            InlineQueryResultArticle(
-                id=str(uuid.uuid4()),
-                title="Invite your friends!",
-                input_message_content=InputTextMessageContent(invite_text),
-                description="Send an invite message to your friends."
-            )
-        )
-    update.inline_query.answer(results, cache_time=60, is_personal=True)
-
+# === Bot Logic ===
 def run_bot():
-    print("Bot started. Scanning for new tokens...")
+    send_telegram_message("🚀 Coin Updater Bot Started!", CHAT_ID, inline_keyboard)
 
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dispatcher = updater.dispatcher
+    # Welcome message (sent once)
+    if not os.path.exists("welcome_sent.flag"):
+        welcome_text = (
+            "👋 Welcome to @coinupdater_bot!\n\n"
+            "This bot automatically tracks and posts *newly launched tokens* on the Solana blockchain.\n\n"
+            "🔍 What It Does:\n"
+            "• Scans newest tokens from DexScreener\n"
+            "• Posts:\n"
+            "  ├ 💸 Price (SOL & USD)\n"
+            "  ├ 📊 Market Cap\n"
+            "  ├ 🔁 Volume\n"
+            "  ├ 💧 LP\n"
+            "  └ 🪙 Holders\n\n"
+            f"💰 Support the bot: `{DONATION_WALLET}`\n\n"
+            "✅ Get instant alerts for *real* Solana tokens!"
+        )
+        send_telegram_message(welcome_text, CHAT_ID, inline_keyboard)
+        with open("welcome_sent.flag", "w") as f:
+            f.write("ok")
 
-    # Register handlers
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(InlineQueryHandler(inlinequery))
-
-    # Start polling in background (so bot can receive inline queries and commands)
-    updater.start_polling()
-
-    bot = updater.bot
-
+    # Main loop
     while True:
-        tokens = get_recent_solana_tokens()
-        if not tokens:
-            logger.info("No tokens fetched, retrying after 10 minutes.")
-            time.sleep(600)
-            continue
+        try:
+            tokens = fetch_tokens()
 
-        new_tokens = [t for t in tokens if t not in posted_tokens]
-        logger.info(f"Found {len(new_tokens)} new tokens to check...")
+            if not tokens:
+                send_telegram_message("⚠️ No Solana tokens found.", CHAT_ID, inline_keyboard)
 
-        for mint in new_tokens:
-            logger.info(f"Processing token: {mint}")
-            msg = format_token_message(mint)
-            try:
-                bot.send_message(
-                    chat_id=CHAT_ID,
-                    text=msg,
-                    parse_mode="Markdown",
-                    disable_web_page_preview=False,
-                    reply_markup=inline_keyboard
-                )
-            except Exception as e:
-                logger.error(f"Failed to send message: {e}")
-            posted_tokens.add(mint)
-            time.sleep(2)  # To avoid Telegram flood control
+            for token in tokens[:5]:  # Process top 5 new tokens
+                address = token.get('address')
+                if not address or address in posted_tokens:
+                    continue
 
-        logger.info("Sleeping for 10 minutes before next scan...")
-        time.sleep(600)
+                info = fetch_token_data(address)
+                if info:
+                    msg = format_token_msg(token, info)
+                    send_telegram_message(msg, CHAT_ID, inline_keyboard)
+                    posted_tokens.append(address)
+                    time.sleep(3)
+                else:
+                    send_telegram_message(
+                        f"⚠️ `{token.get('name', '?')}` has no Dex data.\n`{address}`", CHAT_ID, inline_keyboard
+                    )
 
+            time.sleep(180)  # Check every 3 minutes
 
+        except Exception as e:
+            send_telegram_message(f"❌ Bot crashed: {e}", CHAT_ID, inline_keyboard)
+            time.sleep(30)
+
+# === Launch ===
 if __name__ == "__main__":
-    run_bot()
+    threading.Thread(target=run_bot, daemon=True).start()
+    app.run(host="0.0.0.0", port=8080)
