@@ -19,10 +19,18 @@ CHAT_ID = "7636990835"
 DONATION_WALLET = "79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz"
 
 # Cache to prevent reposting
-posted_tokens = deque(maxlen=300)
+POSTED_TOKENS_FILE = "posted_tokens.txt"
 
-# Meme keywords to filter tokens
-MEME_KEYWORDS = ['dog', 'pepe', 'cat', 'elon', 'moon', 'baby', 'inu', 'panda', 'bonk', 'rat', 'wagmi', 'meme']
+def load_posted_tokens():
+    if not os.path.exists(POSTED_TOKENS_FILE):
+        return set()
+    with open(POSTED_TOKENS_FILE, "r") as f:
+        tokens = f.read().splitlines()
+    return set(tokens)
+
+def save_posted_tokens(tokens):
+    with open(POSTED_TOKENS_FILE, "w") as f:
+        f.write("\n".join(tokens))
 
 def send_telegram_message(text, reply_markup=None):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -30,118 +38,109 @@ def send_telegram_message(text, reply_markup=None):
         "chat_id": CHAT_ID,
         "text": text,
         "parse_mode": "Markdown",
-        "disable_web_page_preview": False,
+        "disable_web_page_preview": True,
     }
     if reply_markup:
-        payload["reply_markup"] = json.dumps(reply_markup)
+        payload["reply_markup"] = reply_markup
 
-    try:
-        resp = requests.post(url, data=payload, timeout=10)
-        if resp.status_code == 200:
-            print(f"✅ Message sent")
-        else:
-            print(f"❌ Telegram error {resp.status_code}: {resp.text}")
-    except Exception as e:
-        print(f"❌ Exception sending telegram message: {e}")
+    resp = requests.post(url, json=payload)
+    if resp.status_code != 200:
+        print(f"⚠️ Telegram send failed: {resp.text}")
+    else:
+        print("✅ Message sent")
 
 def fetch_tradable_tokens():
-    url = "https://api.jup.ag/tokens/v1/mints/tradable"
+    url = "https://price.jup.ag/v4/tradableTokens"
     try:
-        resp = requests.get(url, timeout=10)
-        resp.raise_for_status()
-        tokens = resp.json()
-        # Filter by meme keywords in name
-        meme_tokens = [t for t in tokens if any(k in t["name"].lower() for k in MEME_KEYWORDS)]
-        print(f"🔍 Found {len(meme_tokens)} meme tokens")
-        return meme_tokens
+        response = requests.get(url)
+        data = response.json()
+        return data.get("data", [])
     except Exception as e:
-        print(f"❌ Error fetching tokens from Jupiter API: {e}")
+        print(f"❌ Error fetching tokens: {e}")
         return []
 
 def fetch_token_data(address):
-    url = f"https://api.dexscreener.com/latest/dex/pairs/solana/{address}"
+    url = f"https://price.jup.ag/v4/token/{address}"
     try:
-        resp = requests.get(url, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json().get("pair")
-            return data
-        else:
-            print(f"❌ DexScreener returned status {resp.status_code} for {address}")
+        response = requests.get(url)
+        return response.json().get("data", {})
     except Exception as e:
-        print(f"❌ Exception fetching token data from DexScreener: {e}")
-    return None
+        print(f"❌ Error fetching token data: {e}")
+        return {}
 
 def format_token_message(token, info):
     name = token.get("name", "Unknown")
-    symbol = token.get("symbol", "???")
-    address = token.get("address", "unknown")
+    symbol = token.get("symbol", "N/A")
+    address = token.get("address", "N/A")
 
-    if info:
-        price_sol = float(info.get("priceNative", 0))
-        price_usd = float(info.get("priceUsd", 0))
-        fdv = int(float(info.get("fdv", 0)))
-        volume_24h = int(float(info.get("volume", {}).get("h24", 0)))
-        liquidity = int(float(info.get("liquidity", {}).get("base", 0)))
-        holders = info.get("holders", "?")
+    price_native = info.get("priceNative")
+    price_usd = info.get("priceUsd")
+    fdv = info.get("fdv")
+    volume_24h = info.get("volume", {}).get("h24")
+    liquidity = info.get("liquidity", {}).get("base")
+    holders = info.get("holders")
 
-        msg = (
-            f"⏺️ *{name}* / `${symbol}`\n"
-            f"🆕 New Meme Token | 🟢 Launched recently\n"
-            f"💸 `{price_sol:.4f} SOL` (${price_usd:.2f})\n"
-            f"📊 Mkt Cap: `${fdv:,}` | 🔁 Vol 24h: `{volume_24h:,} SOL`\n"
-            f"💧 LP: `{liquidity:,} SOL` | 🪙 Holders: `{holders}`\n\n"
-            f"[📍 View on DexScreener](https://dexscreener.com/solana/{address})\n"
-            f"[🟢 Buy on Jupiter](https://jup.ag/swap/SOL-{address})\n"
-            f"💰 *Donate:* `79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz`"
-        )
-    else:
-        msg = (
-            f"⏺️ *{name}* / `${symbol}`\n"
-            f"⚠️ Price data not available\n\n"
-            f"[🟢 Buy on Jupiter](https://jup.ag/swap/SOL-{address})\n"
-            f"💰 *Donate:* `79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz`"
-        )
+    # Format numbers nicely
+    def fmt(x):
+        if x is None:
+            return "N/A"
+        if isinstance(x, float):
+            return f"{x:,.4f}"
+        return str(x)
+
+    msg = (
+        f"*{name}* ({symbol})\n"
+        f"Address: `{address}`\n\n"
+        f"Price: {fmt(price_native)} SOL | ${fmt(price_usd)}\n"
+        f"FDV: ${fmt(fdv)}\n"
+        f"24h Volume: ${fmt(volume_24h)}\n"
+        f"Liquidity: {fmt(liquidity)} SOL\n"
+        f"Holders: {fmt(holders)}\n\n"
+        f"[View on Solana Explorer](https://explorer.solana.com/address/{address})"
+    )
     return msg
 
-def run_bot():
-    print("🚀 Meme Bot Started!")
+def main_loop():
+    print("🚀 Meme Token Updater Bot started!")
 
-    # Send welcome message once
-    send_telegram_message(
-        "👋 Welcome to *Meme Token Updater Bot*! \n\nGet the latest new meme tokens on Solana.\n"
-        "Use the buttons below to refer friends or join our group.",
-        reply_markup={
-            "inline_keyboard": [
-                [{"text": "🔗 Refer Friends", "switch_inline_query": "invite "}],
-                [{"text": "📢 Join Our Group", "url": "https://t.me/digistoryan"}],
-            ]
-        },
+    posted_tokens = load_posted_tokens()
+
+    # Welcome message with buttons
+    welcome_text = (
+        "👋 Welcome to *Meme Token Updater Bot*!\n\n"
+        "Get the latest new tokens on Solana as they pop up.\n"
+        "Use the buttons below to refer friends or join our group."
     )
+    buttons = {
+        "inline_keyboard": [
+            [{"text": "🔗 Refer Friends", "switch_inline_query": "invite "}],
+            [{"text": "📢 Join Our Group", "url": "https://t.me/digistoryan"}],
+        ]
+    }
+    send_telegram_message(welcome_text, reply_markup=buttons)
 
     while True:
         tokens = fetch_tradable_tokens()
-        count_sent = 0
+        print(f"🔍 Fetched {len(tokens)} tokens")
 
-        for token in tokens[:10]:  # limit max 10 per iteration to avoid spam
+        new_tokens = [t for t in tokens if t.get("address") not in posted_tokens]
+
+        if not new_tokens:
+            print("ℹ️ No new tokens found.")
+        else:
+            print(f"✨ Found {len(new_tokens)} new tokens!")
+
+        for token in new_tokens:
             address = token.get("address")
-            if not address or address in posted_tokens:
-                continue
+            token_info = fetch_token_data(address)
+            message = format_token_message(token, token_info)
+            send_telegram_message(message)
+            posted_tokens.add(address)
+            save_posted_tokens(posted_tokens)
+            time.sleep(3)  # Telegram rate limit safety
 
-            info = fetch_token_data(address)
-            msg = format_token_message(token, info)
-            send_telegram_message(msg)
-            posted_tokens.append(address)
-            count_sent += 1
-            time.sleep(3)
-
-        if count_sent == 0:
-            print("ℹ️ No new tokens found to send.")
-
-        print("⏳ Waiting 3 minutes before next check...\n")
-        time.sleep(180)  # wait 3 minutes before next fetch
+        print("⏳ Waiting 3 minutes before checking again...\n")
+        time.sleep(180)
 
 if __name__ == "__main__":
-    # Run bot in background thread
-    threading.Thread(target=run_bot, daemon=True).start()
-    # Start Flask server
-    app.run(host="0.0.0.0", port=8080)
+    main_loop()
