@@ -21,7 +21,7 @@ DONATION_WALLET = "79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz"
 # Cache to prevent reposting
 posted_tokens = deque(maxlen=250)
 
-# Inline buttons
+# Inline keyboard for Telegram message
 inline_keyboard = {
     "inline_keyboard": [
         [{"text": "🔗 Refer Friends", "switch_inline_query": "invite "}],
@@ -29,7 +29,7 @@ inline_keyboard = {
     ]
 }
 
-# === Messaging ===
+# === Telegram Message Sender ===
 def send_telegram_message(msg, chat_id, reply_markup=None):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
@@ -41,29 +41,27 @@ def send_telegram_message(msg, chat_id, reply_markup=None):
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
     try:
-        requests.post(url, data=payload, timeout=10)
+        r = requests.post(url, data=payload, timeout=10)
+        r.raise_for_status()
     except Exception as e:
         print(f"❌ Send error: {e}", flush=True)
 
-# === Token Fetching ===
+# === Fetching Tokens ===
 def fetch_tokens():
     try:
         res = requests.get("https://cache.jup.ag/tokens", timeout=10)
         tokens = res.json()[:1000]
-        meme_keywords = [
-    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
-    'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-    'panda', 'bonk', 'rat', 'wagmi', 'meme'
-]
+        meme_keywords = list("abcdefghijklmnopqrstuvwxyz0123456789") + [
+            'panda', 'bonk', 'rat', 'wagmi', 'meme'
+        ]
         return [t for t in tokens if any(k in t['name'].lower() for k in meme_keywords)]
     except Exception as e:
         print(f"❌ Token fetch error: {e}", flush=True)
         return []
 
 def fetch_token_data(address):
-    url = f"https://api.dexscreener.com/latest/dex/pairs/solana/{address}"
     try:
+        url = f"https://api.dexscreener.com/latest/dex/pairs/solana/{address}"
         res = requests.get(url, timeout=10)
         if res.status_code == 200:
             return res.json().get("pair", {})
@@ -71,18 +69,21 @@ def fetch_token_data(address):
         print(f"❌ Dex error: {e}", flush=True)
     return {}
 
-# === Format Message ===
+# === Format Token Info to Message ===
 def format_token_msg(token, info):
     name = token['name']
     symbol = token['symbol']
     address = token['address']
 
-    price_sol = float(info.get("priceNative", 0))
-    price_usd = float(info.get("priceUsd", 0))
-    mcap = int(float(info.get("fdv", 0)))
-    volume = int(float(info.get("volume", {}).get("h24", 0)))
-    liquidity = int(float(info.get("liquidity", {}).get("base", 0)))
-    holders = info.get("holders", "?")
+    try:
+        price_sol = float(info.get("priceNative", 0))
+        price_usd = float(info.get("priceUsd", 0))
+        mcap = int(float(info.get("fdv", 0)))
+        volume = int(float(info.get("volume", {}).get("h24", 0)))
+        liquidity = int(float(info.get("liquidity", {}).get("base", 0)))
+        holders = info.get("holders", "?")
+    except:
+        return None
 
     return (
         f"⏺ | 🐶 *{name}* / `${symbol}`\n"
@@ -95,10 +96,17 @@ def format_token_msg(token, info):
         f"💰 *Donate:* `{DONATION_WALLET}`"
     )
 
-# === Bot Runner ===
-def run_bot():
-    send_telegram_message("🚀 Meme Bot Started!", CHAT_ID)
+# === Core Bot Logic ===
+def bot_logic():
+    print("🟢 Bot logic started", flush=True)
 
+    # Only send "Started" once
+    if not os.path.exists("started.flag"):
+        send_telegram_message("🚀 Meme Bot Started!", CHAT_ID)
+        with open("started.flag", "w") as f:
+            f.write("yes")
+
+    # Welcome message once
     if not os.path.exists("welcome_sent.flag"):
         welcome_text = (
             "👋 Welcome to @coinupdater_bot!\n\n"
@@ -112,11 +120,12 @@ def run_bot():
     while True:
         try:
             tokens = fetch_tokens()
-
             if not tokens:
-                send_telegram_message("⚠️ No meme tokens found.", CHAT_ID)
+                print("⚠️ No tokens fetched.", flush=True)
+                time.sleep(60)
+                continue
 
-            for token in tokens[:5]:
+            for token in tokens[:10]:
                 address = token['address']
                 if address in posted_tokens:
                     continue
@@ -124,20 +133,31 @@ def run_bot():
                 info = fetch_token_data(address)
                 if info:
                     msg = format_token_msg(token, info)
-                    send_telegram_message(msg, CHAT_ID, inline_keyboard)
-                    posted_tokens.append(address)
-                    time.sleep(3)
+                    if msg:
+                        send_telegram_message(msg, CHAT_ID, inline_keyboard)
+                        posted_tokens.append(address)
+                        time.sleep(3)
                 else:
-                    warn_msg = f"⚠️ `{token['name']}` has no Dex info.\n`{address}`"
-                    send_telegram_message(warn_msg, CHAT_ID)
+                    print(f"⚠️ Skipping {token['name']} - No valid Dex info", flush=True)
 
             time.sleep(180)
 
         except Exception as e:
-            send_telegram_message(f"❌ Bot crashed: {e}", CHAT_ID)
+            print(f"❌ Loop crash: {e}", flush=True)
+            send_telegram_message(f"⚠️ Bot crashed: {e}", CHAT_ID)
             time.sleep(30)
 
-# === Launch ===
+# === Crash-Proof Runner ===
+def run_bot_forever():
+    while True:
+        try:
+            bot_logic()
+        except Exception as e:
+            print(f"🔥 Total failure: {e}", flush=True)
+            send_telegram_message(f"🔥 Bot totally crashed: {e}", CHAT_ID)
+            time.sleep(60)
+
+# === Launch Server and Bot ===
 if __name__ == "__main__":
-    threading.Thread(target=run_bot, daemon=True).start()
+    threading.Thread(target=run_bot_forever, daemon=True).start()
     app.run(host="0.0.0.0", port=8080)
