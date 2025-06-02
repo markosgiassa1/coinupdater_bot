@@ -16,7 +16,7 @@ posted_tokens = deque(maxlen=250)
 inline_keyboard = {
     "inline_keyboard": [
         [{"text": "🔗 Refer Friends", "switch_inline_query": "invite "}],
-        [{"text": "💰 Donate", "url": f"https://t.me/donate?wallet={DONATION_WALLET}"}],
+        [{"text": "💰 Donate", "url": "https://your-donation-page-or-wallet-link.com"}],  # Update this
         [{"text": "📢 Join Our Group", "url": "https://t.me/digistoryan"}]
     ]
 }
@@ -30,9 +30,12 @@ def send_telegram_message(msg, chat_id, reply_markup=None):
         "disable_web_page_preview": False,
     }
     if reply_markup:
-        payload["reply_markup"] = json.dumps(reply_markup)
+        payload["reply_markup"] = reply_markup
+
     try:
-        requests.post(url, data=payload, timeout=10)
+        # Use json parameter for proper JSON encoding
+        response = requests.post(url, json=payload, timeout=10)
+        response.raise_for_status()
     except Exception as e:
         print(f"❌ Telegram send error: {e}", flush=True)
 
@@ -80,24 +83,18 @@ def format_token_msg(token):
     return msg
 
 def run_bot():
-    inline_keyboard = {
-        "inline_keyboard": [
-            [{"text": "🔗 Refer Friends", "switch_inline_query": "invite "}],
-            [{"text": "💰 Donate", "url": f"https://t.me/donate?wallet={DONATION_WALLET}"}],
-            [{"text": "📢 Join Our Group", "url": "https://t.me/digistoryan"}]
-        ]
-    }
-
     send_telegram_message("🚀 Coin Updater Bot Started!", CHAT_ID, inline_keyboard)
 
     while True:
         tokens = fetch_tokens()
         if not tokens:
-            send_telegram_message("⚠️ No new Solana tokens found.", CHAT_ID, inline_keyboard)
+            # Don't spam chat; just wait and retry
             time.sleep(180)
             continue
 
-        for token in tokens[:5]:
+        new_tokens_found = False
+
+        for token in tokens:
             address = token.get('address')
             if not address or address in posted_tokens:
                 continue
@@ -105,7 +102,14 @@ def run_bot():
             msg = format_token_msg(token)
             send_telegram_message(msg, CHAT_ID, inline_keyboard)
             posted_tokens.append(address)
+            new_tokens_found = True
             time.sleep(3)  # avoid spamming telegram too fast
+
+            if len(posted_tokens) >= posted_tokens.maxlen:
+                break  # avoid posting too many tokens at once
+
+        if not new_tokens_found:
+            print("No new tokens detected.")
 
         time.sleep(180)  # wait 3 minutes before next check
 
