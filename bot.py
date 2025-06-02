@@ -23,7 +23,7 @@ posted_tokens = deque(maxlen=250)  # Prevent reposting same tokens
 inline_keyboard = {
     "inline_keyboard": [
         [{"text": "🔗 Refer Friends", "switch_inline_query": "invite "}],
-        [{"text": "💰 Donate", "url": f"https://t.me/donate?wallet={DONATION_WALLET}"}],  # Replace URL if you want real donation page
+        [{"text": "💰 Donate", "url": f"https://t.me/donate?wallet={DONATION_WALLET}"}],
         [{"text": "📢 Join Our Group", "url": "https://t.me/digistoryan"}]
     ]
 }
@@ -44,79 +44,62 @@ def send_telegram_message(msg, chat_id, reply_markup=None):
     except Exception as e:
         print(f"❌ Send error: {e}", flush=True)
 
-# === Solana Token Fetcher ===
+# === Jupiter Token Fetcher ===
 def fetch_tokens():
     try:
-        url = "https://api.dexscreener.com/latest/dex/pairs/solana"
+        url = "https://quote-api.jup.ag/v1/tokens"
         res = requests.get(url, timeout=10)
         res.raise_for_status()
         data = res.json()
-        pairs = data.get("pairs", [])
-
-        solana_tokens = []
-        for pair in pairs:
-            base = pair.get("baseToken", {})
-            quote = pair.get("quoteToken", {})
-
-            # Filter valid SPL token addresses (usually > 32 chars)
-            if not base.get("address") or len(base["address"]) < 32:
-                continue
-
-            # Skip wrapped SOL, WSOL, USDC, etc.
-            symbol = base.get("symbol", "").lower()
-            if symbol in ["sol", "wsol", "usdc", "usdt"]:
-                continue
-
-            solana_tokens.append({
-                "address": base["address"],
-                "name": base["name"],
-                "symbol": base["symbol"]
-            })
-
-        return solana_tokens
-
+        tokens = data.get("tokens", [])
+        sol_tokens = []
+        for t in tokens:
+            if t.get("chainId") == 101:
+                symbol = t.get("symbol", "").lower()
+                if symbol in ["sol", "wsol", "usdc", "usdt"]:
+                    continue
+                sol_tokens.append({
+                    "address": t.get("address"),
+                    "name": t.get("name"),
+                    "symbol": t.get("symbol"),
+                    "decimals": t.get("decimals"),
+                    "logoURI": t.get("logoURI"),
+                    "website": t.get("extensions", {}).get("website", "")
+                })
+        return sol_tokens
     except Exception as e:
-        send_telegram_message(f"❌ Error fetching Solana tokens:\n{e}", CHAT_ID)
+        send_telegram_message(f"❌ Error fetching Jupiter tokens:\n{e}", CHAT_ID)
         return []
 
-# === Token Detail Fetcher ===
+# === Token Detail Fetcher (no extra call needed) ===
 def fetch_token_data(address):
-    url = f"https://api.dexscreener.com/latest/dex/pairs/solana/{address}"
-    try:
-        res = requests.get(url, timeout=10)
-        if res.status_code == 200:
-            return res.json().get("pair", {})
-    except Exception as e:
-        print(f"❌ Dex error: {e}", flush=True)
+    # Jupiter API token list already has metadata, so no extra fetch needed
     return {}
 
 # === Token Info Formatter ===
-def format_token_msg(token, info):
+def format_token_msg(token, info=None):
     name = token.get('name', '?')
     symbol = token.get('symbol', '?')
     address = token.get('address', '?')
+    decimals = token.get('decimals', '?')
+    logo = token.get('logoURI', '')
+    website = token.get('website', '')
 
-    try:
-        price_sol = float(info.get("priceNative", 0))
-        price_usd = float(info.get("priceUsd", 0))
-        mcap = int(float(info.get("fdv", 0)))
-        volume = int(float(info.get("volume", {}).get("h24", 0)))
-        liquidity = int(float(info.get("liquidity", {}).get("base", 0)))
-        holders = info.get("holders", "?")
-    except:
-        price_sol, price_usd, mcap, volume, liquidity = 0, 0, 0, 0, 0
-        holders = "?"
+    jupiter_link = f"https://jup.ag/swap?inputCurrency=SOL&outputCurrency={address}"
+    dex_link = f"https://dexscreener.com/solana/{address}"
 
-    return (
+    msg = (
         f"⏺ | 🪙 *{name}* / `${symbol}`\n"
-        f"🆕 New Token Detected on *Solana*\n"
-        f"💸 `{price_sol:.4f} SOL` (${price_usd:.2f})\n"
-        f"📊 Mkt Cap: `${mcap:,}` | 🔁 24h Vol: `{volume:,} SOL`\n"
-        f"💧 LP: `{liquidity:,} SOL` | 🪙 Holders: `{holders}`\n\n"
-        f"[📍 View on DexScreener](https://dexscreener.com/solana/{address})\n"
-        f"[🟢 Buy on Jupiter](https://jup.ag/swap/SOL-{address})\n\n"
+        f"🆕 New Token Detected on *Solana* via Jupiter API\n"
+        f"🆔 `{address}`\n"
+        f"🔢 Decimals: `{decimals}`\n"
+        f"🌐 Website: {website if website else 'N/A'}\n"
+        f"[🖼 Logo]({logo})\n\n"
+        f"[📍 View on DexScreener]({dex_link})\n"
+        f"[🟢 Swap on Jupiter]({jupiter_link})\n\n"
         f"💰 *Donate:* `{DONATION_WALLET}`"
     )
+    return msg
 
 # === Bot Logic ===
 def run_bot():
@@ -128,13 +111,11 @@ def run_bot():
             "👋 Welcome to @coinupdater_bot!\n\n"
             "This bot automatically tracks and posts *newly launched tokens* on the Solana blockchain.\n\n"
             "🔍 What It Does:\n"
-            "• Scans newest tokens from DexScreener\n"
+            "• Scans newest tokens from Jupiter API\n"
             "• Posts:\n"
-            "  ├ 💸 Price (SOL & USD)\n"
-            "  ├ 📊 Market Cap\n"
-            "  ├ 🔁 Volume\n"
-            "  ├ 💧 LP\n"
-            "  └ 🪙 Holders\n\n"
+            "  ├ 💸 Token info & links\n"
+            "  ├ 📊 Market data via DexScreener link\n"
+            "  ├ 🟢 Jupiter Swap link\n\n"
             f"💰 Support the bot: `{DONATION_WALLET}`\n\n"
             "✅ Get instant alerts for *real* Solana tokens!"
         )
@@ -142,7 +123,6 @@ def run_bot():
         with open("welcome_sent.flag", "w") as f:
             f.write("ok")
 
-    # Main loop
     while True:
         try:
             tokens = fetch_tokens()
@@ -150,21 +130,16 @@ def run_bot():
             if not tokens:
                 send_telegram_message("⚠️ No Solana tokens found.", CHAT_ID, inline_keyboard)
 
-            for token in tokens[:5]:  # Process top 5 new tokens
+            for token in tokens[:5]:  # Post top 5 new tokens
                 address = token.get('address')
                 if not address or address in posted_tokens:
                     continue
 
-                info = fetch_token_data(address)
-                if info:
-                    msg = format_token_msg(token, info)
-                    send_telegram_message(msg, CHAT_ID, inline_keyboard)
-                    posted_tokens.append(address)
-                    time.sleep(3)
-                else:
-                    send_telegram_message(
-                        f"⚠️ `{token.get('name', '?')}` has no Dex data.\n`{address}`", CHAT_ID, inline_keyboard
-                    )
+                info = fetch_token_data(address)  # Not used but kept for compatibility
+                msg = format_token_msg(token, info)
+                send_telegram_message(msg, CHAT_ID, inline_keyboard)
+                posted_tokens.append(address)
+                time.sleep(3)
 
             time.sleep(180)  # Check every 3 minutes
 
