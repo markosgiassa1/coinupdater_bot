@@ -38,46 +38,21 @@ def send_telegram_message(msg, chat_id, reply_markup=None):
         print(f"❌ Telegram send error: {e}", flush=True)
 
 def scrape_tokens_from_jup():
-    url = "https://jup.ag/pro?tab=cooking"
+    url = "https://api.jup.ag/api/v1/cooking-tokens"
     try:
         res = requests.get(url, timeout=10)
         res.raise_for_status()
-        html = res.text
-
-        # The tokens are inside a script tag as JSON (look for window.__INITIAL_STATE__=)
-        prefix = "window.__INITIAL_STATE__="
-        start = html.find(prefix)
-        if start == -1:
-            print("Could not find tokens JSON in page")
-            return []
-        start += len(prefix)
-        end = html.find(";</script>", start)
-        if end == -1:
-            print("Could not find end of tokens JSON")
-            return []
-        json_text = html[start:end]
-        data = json.loads(json_text)
-
-        # Navigate the JSON structure to tokens on Solana chain (chainId=101)
-        # The structure may be: data.tokens.tokens or similar — let's try
-        tokens = []
-        if "tokens" in data and "tokens" in data["tokens"]:
-            all_tokens = data["tokens"]["tokens"]
-            for t in all_tokens.values():
-                if t.get("chainId") == 101:
-                    symbol = t.get("symbol", "").lower()
-                    # Filter out main tokens if desired
-                    if symbol in ["sol", "wsol", "usdc", "usdt"]:
-                        continue
-                    tokens.append(t)
-        else:
-            print("Tokens not found in parsed JSON")
-            return []
-
-        return tokens
-
+        tokens = res.json()  # usually a list of tokens
+        sol_tokens = []
+        for t in tokens:
+            if t.get("chainId") == 101:
+                symbol = t.get("symbol", "").lower()
+                if symbol in ["sol", "wsol", "usdc", "usdt"]:
+                    continue
+                sol_tokens.append(t)
+        return sol_tokens
     except Exception as e:
-        send_telegram_message(f"❌ Error scraping Jupiter tokens:\n{e}", CHAT_ID)
+        send_telegram_message(f"❌ Error fetching tokens from Jupiter Cooking API:\n{e}", CHAT_ID)
         return []
 
 def format_token_msg(token):
