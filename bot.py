@@ -1,8 +1,15 @@
 import requests
 from solana.rpc.api import Client
 import time
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater
+from telegram import (
+    InlineKeyboardButton, InlineKeyboardMarkup,
+    Update, InlineQueryResultArticle, InputTextMessageContent
+)
+from telegram.ext import (
+    Updater, CommandHandler, InlineQueryHandler, CallbackContext
+)
+import logging
+import uuid
 
 # === CONFIG ===
 API_KEY = "9867d904-fdcc-46b7-b5b1-c9ae880bd41d"
@@ -19,38 +26,46 @@ inline_keyboard = InlineKeyboardMarkup([
     [InlineKeyboardButton("📢 Join Our Group", url="https://t.me/digistoryan")]
 ])
 
-def send_telegram_message(text):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": text,
-        "parse_mode": "Markdown",
-        "disable_web_page_preview": False,
-        # We cannot send InlineKeyboardMarkup via Telegram API raw POST easily,
-        # so we use telegram python library Updater to send messages with keyboards.
-        # But to keep it consistent, we will switch to Updater for sending messages.
-    }
-    # Since requests.post can't handle reply_markup easily, we'll send messages with python-telegram-bot library instead.
-    # This function will be redefined below to use Updater's bot.send_message.
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+
+logger = logging.getLogger(__name__)
 
 def get_token_metadata(mint):
-    url = f"https://mainnet.helius.xyz/v0/tokens/metadata?api-key={API_KEY}"
-    resp = requests.post(url, json={"mintAccounts": [mint]})
-    if resp.status_code == 200 and resp.json():
-        return resp.json()[0]
-    return None
+    url = f"https://mainnet.helius-rpc.com/v0/tokens/metadata?api-key={API_KEY}"
+    try:
+        resp = requests.post(url, json={"mintAccounts": [mint]}, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            if isinstance(data, list) and len(data) > 0:
+                return data[0]
+        logger.warning(f"No metadata found for mint {mint}")
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching metadata for {mint}: {e}")
+        return None
 
 def get_largest_accounts(mint):
-    resp = client.get_token_largest_accounts(mint)
-    if resp.get("result"):
-        return resp["result"]["value"]
-    return []
+    try:
+        resp = client.get_token_largest_accounts(mint)
+        if resp.get("result"):
+            return resp["result"]["value"]
+        return []
+    except Exception as e:
+        logger.error(f"Error fetching largest accounts for {mint}: {e}")
+        return []
 
 def get_supply(mint):
-    resp = client.get_token_supply(mint)
-    if resp.get("result"):
-        return resp["result"]["value"]
-    return {}
+    try:
+        resp = client.get_token_supply(mint)
+        if resp.get("result"):
+            return resp["result"]["value"]
+        return {}
+    except Exception as e:
+        logger.error(f"Error fetching supply for {mint}: {e}")
+        return {}
 
 def format_token_message(mint):
     meta = get_token_metadata(mint)
@@ -61,75 +76,126 @@ def format_token_message(mint):
     holders = get_largest_accounts(mint)
 
     decimals = int(supply.get("decimals", 0))
-    total_supply = int(supply.get("amount", 0)) / (10 ** decimals) if decimals else 0
+    amount_raw = int(supply.get("amount", 0)) if supply.get("amount") else 0
+    total_supply = amount_raw / (10 ** decimals) if decimals else 0
 
     holders_str = ""
     for h in holders[:5]:
-        amt = int(h["amount"]) / (10 ** decimals) if decimals else 0
-        holders_str += f"- `{h['address'][:8]}...`: {amt:.2f}\n"
+        amt_raw = int(h.get("amount", 0))
+        amt = amt_raw / (10 ** decimals) if decimals else 0
+        holders_str += f"- `{h.get('address', '')[:8]}...`: {amt:.2f}\n"
+
+    offchain = meta.get('offChainData') or {}
 
     msg = (
         f"🆕 *New Solana Token Detected!*\n\n"
-        f"📛 *Name:* {meta.get('name')}\n"
-        f"💠 *Symbol:* {meta.get('symbol')}\n"
+        f"📛 *Name:* {meta.get('name', 'N/A')}\n"
+        f"💠 *Symbol:* {meta.get('symbol', 'N/A')}\n"
         f"🔗 [Solana Explorer](https://explorer.solana.com/address/{mint})\n\n"
         f"📦 *Total Supply:* {total_supply:,.2f}\n"
         f"🔢 *Decimals:* {decimals}\n\n"
         f"🏦 *Top Holders:*\n{holders_str}\n"
-        f"🌐 *Website:* {meta.get('offChainData', {}).get('external_url', 'N/A')}\n"
-        f"📝 *Description:* {meta.get('offChainData', {}).get('description', 'N/A')}\n"
-        f"🖼 *Image:* {meta.get('offChainData', {}).get('image', 'N/A')}"
+        f"🌐 *Website:* {offchain.get('external_url', 'N/A')}\n"
+        f"📝 *Description:* {offchain.get('description', 'N/A')}\n"
+        f"🖼 *Image:* {offchain.get('image', 'N/A')}"
     )
     return msg
-    
+
 def get_recent_solana_tokens():
     url = "https://quote-api.jup.ag/v1/tokens"
     try:
-        resp = requests.get(url)
+        resp = requests.get(url, timeout=10)
         if resp.status_code == 200:
             data = resp.json()
             tokens = []
             for token in data.get('tokens', []):
                 if token.get('chainId') == 101:  # 101 = Solana Mainnet
                     tokens.append(token['address'])
-            # Optionally filter for recently added tokens (Jupiter API does not provide added date, so this is a limitation)
             return tokens
         else:
-            print(f"Jupiter API error: {resp.status_code}")
+            logger.warning(f"Jupiter API error: {resp.status_code}")
             return []
     except Exception as e:
-        print(f"Exception in fetching tokens from Jupiter: {e}")
+        logger.error(f"Exception in fetching tokens from Jupiter: {e}")
         return []
+
+def start(update: Update, context: CallbackContext):
+    """Send a welcome message with referral info on /start"""
+    user = update.effective_user
+    msg = (
+        f"👋 Hi {user.first_name if user else 'there'}!\n\n"
+        "Welcome to the Solana Token Bot.\n"
+        "I will keep you updated about new Solana tokens detected on-chain.\n\n"
+        "Use the 🔗 Refer Friends button below to invite friends and grow the community!\n\n"
+        "Join our group for updates and discussion:"
+    )
+    update.message.reply_text(msg, reply_markup=inline_keyboard)
+
+def inlinequery(update: Update, context: CallbackContext):
+    """Handle inline queries for referral button"""
+    query = update.inline_query.query.lower()
+
+    results = []
+    if query.startswith("invite"):
+        # Provide a referral invite message
+        invite_text = (
+            "Join this awesome Solana token tracker bot! Stay updated with new tokens and get exclusive info. "
+            "Use this link to start: https://t.me/YourBotUsername"
+        )
+        results.append(
+            InlineQueryResultArticle(
+                id=str(uuid.uuid4()),
+                title="Invite your friends!",
+                input_message_content=InputTextMessageContent(invite_text),
+                description="Send an invite message to your friends."
+            )
+        )
+    update.inline_query.answer(results, cache_time=60, is_personal=True)
 
 def run_bot():
     print("Bot started. Scanning for new tokens...")
-    
-    # Setup telegram Updater for sending messages with inline keyboard
-    updater = Updater(BOT_TOKEN)
+
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dispatcher = updater.dispatcher
+
+    # Register handlers
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(InlineQueryHandler(inlinequery))
+
+    # Start polling in background (so bot can receive inline queries and commands)
+    updater.start_polling()
+
     bot = updater.bot
-    
+
     while True:
         tokens = get_recent_solana_tokens()
         if not tokens:
-            print("No tokens fetched, retrying after 10 minutes.")
+            logger.info("No tokens fetched, retrying after 10 minutes.")
             time.sleep(600)
             continue
 
         new_tokens = [t for t in tokens if t not in posted_tokens]
-        print(f"Found {len(new_tokens)} new tokens to check...")
+        logger.info(f"Found {len(new_tokens)} new tokens to check...")
 
         for mint in new_tokens:
-            print(f"Processing token: {mint}")
+            logger.info(f"Processing token: {mint}")
             msg = format_token_message(mint)
             try:
-                bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown", disable_web_page_preview=False, reply_markup=inline_keyboard)
+                bot.send_message(
+                    chat_id=CHAT_ID,
+                    text=msg,
+                    parse_mode="Markdown",
+                    disable_web_page_preview=False,
+                    reply_markup=inline_keyboard
+                )
             except Exception as e:
-                print(f"Failed to send message: {e}")
+                logger.error(f"Failed to send message: {e}")
             posted_tokens.add(mint)
             time.sleep(2)  # To avoid Telegram flood control
 
-        print("Sleeping for 10 minutes before next scan...")
+        logger.info("Sleeping for 10 minutes before next scan...")
         time.sleep(600)
+
 
 if __name__ == "__main__":
     run_bot()
