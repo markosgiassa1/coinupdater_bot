@@ -60,12 +60,8 @@ def fetch_token_data(address):
             send_telegram_message(f"⚠️ DexScreener error {res.status_code} for {address}")
     except Exception as e:
         send_telegram_message(f"❌ DexScreener exception: {e}")
-    return {}
-
-def is_meme_token(name):
-    meme_keywords = ['dog', 'pepe', 'cat', 'elon', 'moon', 'baby', 'inu', 'bonk', 'shib', 'meme', 'pump']
-    return any(k in name.lower() for k in meme_keywords)
-
+    return {
+        
 def format_token_msg(token, info):
     try:
         name = token['name']
