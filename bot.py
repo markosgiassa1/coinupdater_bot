@@ -49,7 +49,8 @@ def send_telegram_message(msg, chat_id, reply_markup=None):
 def fetch_tokens():
     try:
         res = requests.get("https://cache.jup.ag/tokens", timeout=10)
-        return res.json()
+        tokens = res.json()[:100]
+        return tokens
     except Exception as e:
         print(f"❌ Token fetch error: {e}", flush=True)
         return []
