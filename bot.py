@@ -11,7 +11,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "✅ Coin Updater Bot is Running"
+    return "✅ Meme Bot is Running"
 
 # === Bot Configuration ===
 BOT_TOKEN = "7639604753:AAH6_rlQAFgoPr2jlShOA5SKgLT57Br_BxU"
@@ -49,7 +49,9 @@ def send_telegram_message(msg, chat_id, reply_markup=None):
 def fetch_tokens():
     try:
         res = requests.get("https://cache.jup.ag/tokens", timeout=10)
-        return res.json()[:100]  # Take top 100 newest tokens
+        tokens = res.json()[:100]
+        meme_keywords = ['dog', 'pepe', 'cat', 'elon', 'moon', 'baby', 'inu', 'panda', 'bonk', 'rat', 'wagmi', 'meme']
+        return [t for t in tokens if any(k in t['name'].lower() for k in meme_keywords)]
     except Exception as e:
         print(f"❌ Token fetch error: {e}", flush=True)
         return []
@@ -66,24 +68,20 @@ def fetch_token_data(address):
 
 # === Format Message ===
 def format_token_msg(token, info):
-    name = token.get('name', '?')
-    symbol = token.get('symbol', '?')
-    address = token.get('address', '?')
+    name = token['name']
+    symbol = token['symbol']
+    address = token['address']
 
-    try:
-        price_sol = float(info.get("priceNative", 0))
-        price_usd = float(info.get("priceUsd", 0))
-        mcap = int(float(info.get("fdv", 0)))
-        volume = int(float(info.get("volume", {}).get("h24", 0)))
-        liquidity = int(float(info.get("liquidity", {}).get("base", 0)))
-        holders = info.get("holders", "?")
-    except:
-        price_sol, price_usd, mcap, volume, liquidity = 0, 0, 0, 0, 0
-        holders = "?"
+    price_sol = float(info.get("priceNative", 0))
+    price_usd = float(info.get("priceUsd", 0))
+    mcap = int(float(info.get("fdv", 0)))
+    volume = int(float(info.get("volume", {}).get("h24", 0)))
+    liquidity = int(float(info.get("liquidity", {}).get("base", 0)))
+    holders = info.get("holders", "?")
 
     return (
-        f"⏺ | 🪙 *{name}* / `${symbol}`\n"
-        f"🆕 New Token Detected\n"
+        f"⏺ | 🐶 *{name}* / `${symbol}`\n"
+        f"🆕 New Meme Token | 🟢 Launched recently\n"
         f"💸 `{price_sol:.4f} SOL` (${price_usd:.2f})\n"
         f"📊 Mkt Cap: `${mcap:,}` | 🔁 Vol 24h: `{volume:,} SOL`\n"
         f"💧 LP: `{liquidity:,} SOL` | 🪙 Holders: `{holders}`\n\n"
@@ -94,24 +92,13 @@ def format_token_msg(token, info):
 
 # === Bot Runner ===
 def run_bot():
-    send_telegram_message("🚀 Coin Updater Bot Started!", CHAT_ID)
+    send_telegram_message("🚀 Meme Bot Started!", CHAT_ID)
 
     if not os.path.exists("welcome_sent.flag"):
         welcome_text = (
             "👋 Welcome to @coinupdater_bot!\n\n"
-            "This bot automatically tracks and posts *newly launched tokens* on the Solana blockchain.\n\n"
-            "🔍 How It Works:\n"
-            "• Scans the top 100 newest tokens from Jupiter\n"
-            "• Verifies via DexScreener\n"
-            "• Posts live stats:\n"
-            "  ├ 💸 Price (SOL & USD)\n"
-            "  ├ 📊 Market Cap\n"
-            "  ├ 🔁 24h Volume\n"
-            "  ├ 💧 LP\n"
-            "  └ 🪙 Holders (if available)\n\n"
-            "📢 Use the buttons below to refer friends or join our group.\n"
-            f"💰 Support this bot: `{DONATION_WALLET}`\n\n"
-            "✅ Get instant alerts for all new token launches!"
+            "Get the latest meme tokens on Solana.\n"
+            "Use the buttons below to refer friends or join our group."
         )
         send_telegram_message(welcome_text, CHAT_ID, inline_keyboard)
         with open("welcome_sent.flag", "w") as f:
@@ -122,11 +109,11 @@ def run_bot():
             tokens = fetch_tokens()
 
             if not tokens:
-                send_telegram_message("⚠️ No tokens found.", CHAT_ID)
+                send_telegram_message("⚠️ No meme tokens found.", CHAT_ID)
 
             for token in tokens[:5]:
-                address = token.get('address')
-                if not address or address in posted_tokens:
+                address = token['address']
+                if address in posted_tokens:
                     continue
 
                 info = fetch_token_data(address)
@@ -136,7 +123,7 @@ def run_bot():
                     posted_tokens.append(address)
                     time.sleep(3)
                 else:
-                    warn_msg = f"⚠️ `{token.get('name', '?')}` has no Dex info.\n`{address}`"
+                    warn_msg = f"⚠️ `{token['name']}` has no Dex info.\n`{address}`"
                     send_telegram_message(warn_msg, CHAT_ID)
 
             time.sleep(180)
