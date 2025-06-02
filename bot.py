@@ -21,7 +21,7 @@ DONATION_WALLET = "79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz"
 # Cache to prevent reposting
 posted_tokens = deque(maxlen=250)
 
-# Inline buttons
+# Inline keyboard buttons
 inline_keyboard = {
     "inline_keyboard": [
         [{"text": "🔗 Refer Friends", "switch_inline_query": "invite "}],
@@ -29,7 +29,7 @@ inline_keyboard = {
     ]
 }
 
-# === Messaging ===
+# === Messaging Function ===
 def send_telegram_message(msg, chat_id, reply_markup=None):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
@@ -45,17 +45,16 @@ def send_telegram_message(msg, chat_id, reply_markup=None):
     except Exception as e:
         print(f"❌ Send error: {e}", flush=True)
 
-# === Token Fetching ===
+# === Token List Fetcher ===
 def fetch_tokens():
     try:
         res = requests.get("https://cache.jup.ag/tokens", timeout=10)
-        tokens = res.json()[:100]
-        #meme_keywords = ['dog', 'pepe', 'cat', 'elon', 'moon', 'baby', 'inu', 'panda', 'bonk', 'rat', 'wagmi', 'meme']
-        #return [t for t in tokens if any(k in t['name'].lower() for k in meme_keywords)]
+        return res.json()
     except Exception as e:
         print(f"❌ Token fetch error: {e}", flush=True)
         return []
 
+# === Fetch DexScreener Info ===
 def fetch_token_data(address):
     url = f"https://api.dexscreener.com/latest/dex/pairs/solana/{address}"
     try:
@@ -66,11 +65,11 @@ def fetch_token_data(address):
         print(f"❌ Dex error: {e}", flush=True)
     return {}
 
-# === Format Message ===
+# === Format Token Message ===
 def format_token_msg(token, info):
-    name = token['name']
-    symbol = token['symbol']
-    address = token['address']
+    name = token.get('name', '?')
+    symbol = token.get('symbol', '?')
+    address = token.get('address', '?')
 
     price_sol = float(info.get("priceNative", 0))
     price_usd = float(info.get("priceUsd", 0))
@@ -81,7 +80,7 @@ def format_token_msg(token, info):
 
     return (
         f"⏺ | 🐶 *{name}* / `${symbol}`\n"
-        f"🆕 New Meme Token | 🟢 Launched recently\n"
+        f"🆕 New Token Detected!\n"
         f"💸 `{price_sol:.4f} SOL` (${price_usd:.2f})\n"
         f"📊 Mkt Cap: `${mcap:,}` | 🔁 Vol 24h: `{volume:,} SOL`\n"
         f"💧 LP: `{liquidity:,} SOL` | 🪙 Holders: `{holders}`\n\n"
@@ -94,10 +93,11 @@ def format_token_msg(token, info):
 def run_bot():
     send_telegram_message("🚀 Meme Bot Started!", CHAT_ID)
 
+    # Send welcome once
     if not os.path.exists("welcome_sent.flag"):
         welcome_text = (
             "👋 Welcome to @coinupdater_bot!\n\n"
-            "Get the latest meme tokens on Solana.\n"
+            "This bot finds the freshest Solana tokens with trading info!\n"
             "Use the buttons below to refer friends or join our group."
         )
         send_telegram_message(welcome_text, CHAT_ID, inline_keyboard)
@@ -107,13 +107,15 @@ def run_bot():
     while True:
         try:
             tokens = fetch_tokens()
-
             if not tokens:
-                send_telegram_message("⚠️ No meme tokens found.", CHAT_ID)
+                send_telegram_message("⚠️ Could not fetch any tokens.", CHAT_ID)
+                time.sleep(60)
+                continue
 
-            for token in tokens[:5]:
-                address = token['address']
-                if address in posted_tokens:
+            posted = 0
+            for token in tokens:
+                address = token.get('address')
+                if not address or address in posted_tokens:
                     continue
 
                 info = fetch_token_data(address)
@@ -121,10 +123,11 @@ def run_bot():
                     msg = format_token_msg(token, info)
                     send_telegram_message(msg, CHAT_ID, inline_keyboard)
                     posted_tokens.append(address)
+                    posted += 1
                     time.sleep(3)
-                else:
-                    warn_msg = f"⚠️ `{token['name']}` has no Dex info.\n`{address}`"
-                    send_telegram_message(warn_msg, CHAT_ID)
+
+                if posted >= 5:
+                    break
 
             time.sleep(180)
 
@@ -132,7 +135,7 @@ def run_bot():
             send_telegram_message(f"❌ Bot crashed: {e}", CHAT_ID)
             time.sleep(30)
 
-# === Launch ===
+# === Main Entry Point ===
 if __name__ == "__main__":
     threading.Thread(target=run_bot, daemon=True).start()
     app.run(host="0.0.0.0", port=8080)
