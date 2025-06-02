@@ -82,24 +82,7 @@ def format_token_message(mint):
     )
     return msg
 
-def get_recent_solana_tokens():
-    url = "https://api.dexscreener.com/latest/dex/tokens/solana"
-    try:
-        resp = requests.get(url)
-        if resp.status_code == 200:
-            data = resp.json()
-            tokens = []
-            for pair in data.get('pairs', []):
-                token = pair.get('token')
-                if token and token.get('address'):
-                    tokens.append(token['address'])
-            return list(set(tokens))
-        else:
-            print(f"DexScreener API error: {resp.status_code}")
-            return []
-    except Exception as e:
-        print(f"Exception in fetching tokens: {e}")
-        return []
+msg
 
 def run_bot():
     print("Bot started. Scanning for new tokens...")
