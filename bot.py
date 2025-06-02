@@ -50,8 +50,13 @@ def fetch_tokens():
     try:
         res = requests.get("https://cache.jup.ag/tokens", timeout=10)
         tokens = res.json()[:100]
-        #meme_keywords = ['dog', 'pepe', 'cat', 'elon', 'moon', 'baby', 'inu', 'panda', 'bonk', 'rat', 'wagmi', 'meme']
-        #return [t for t in tokens if any(k in t['name'].lower() for k in meme_keywords)]
+        meme_keywords = [
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+    'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+    'panda', 'bonk', 'rat', 'wagmi', 'meme'
+]
+        return [t for t in tokens if any(k in t['name'].lower() for k in meme_keywords)]
     except Exception as e:
         print(f"❌ Token fetch error: {e}", flush=True)
         return []
