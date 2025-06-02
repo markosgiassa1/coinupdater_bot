@@ -49,7 +49,7 @@ def send_telegram_message(msg, chat_id, reply_markup=None):
 def fetch_tokens():
     try:
         res = requests.get("https://cache.jup.ag/tokens", timeout=10)
-        tokens = res.json()[:100]
+        tokens = res.json()[:1000]
         meme_keywords = [
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
     'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
