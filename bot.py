@@ -93,6 +93,10 @@ def format_token_msg(token, info):
         f"💰 *Donate:* `{DONATION_WALLET}`"
     )
 
+if not is_meme_token(name):
+    print(f"⏩ Not meme: {name}")
+    continue
+    
 def run_bot():
     send_telegram_message("🚀 Meme Bot loop is now running...")
 
