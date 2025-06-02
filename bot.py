@@ -81,8 +81,25 @@ def format_token_message(mint):
         f"🖼 *Image:* {meta.get('offChainData', {}).get('image', 'N/A')}"
     )
     return msg
-
-msg
+    
+def get_recent_solana_tokens():
+    url = "https://quote-api.jup.ag/v1/tokens"
+    try:
+        resp = requests.get(url)
+        if resp.status_code == 200:
+            data = resp.json()
+            tokens = []
+            for token in data.get('tokens', []):
+                if token.get('chainId') == 101:  # 101 = Solana Mainnet
+                    tokens.append(token['address'])
+            # Optionally filter for recently added tokens (Jupiter API does not provide added date, so this is a limitation)
+            return tokens
+        else:
+            print(f"Jupiter API error: {resp.status_code}")
+            return []
+    except Exception as e:
+        print(f"Exception in fetching tokens from Jupiter: {e}")
+        return []
 
 def run_bot():
     print("Bot started. Scanning for new tokens...")
