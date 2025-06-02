@@ -32,17 +32,17 @@ def send_telegram_message(msg, chat_id, reply_markup=None):
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
     try:
-        resp = requests.post(url, data=payload, timeout=10)
-        resp.raise_for_status()
+        requests.post(url, data=payload, timeout=10)
     except Exception as e:
         print(f"❌ Telegram send error: {e}", flush=True)
 
-def scrape_tokens_from_jup():
-    url = "https://api.jup.ag/api/v1/cooking-tokens"
+def fetch_tokens():
+    url = "https://lite-api.jup.ag/tokens/v1"
     try:
         res = requests.get(url, timeout=10)
         res.raise_for_status()
-        tokens = res.json()  # usually a list of tokens
+        data = res.json()
+        tokens = data.get("tokens", [])
         sol_tokens = []
         for t in tokens:
             if t.get("chainId") == 101:
@@ -52,26 +52,26 @@ def scrape_tokens_from_jup():
                 sol_tokens.append(t)
         return sol_tokens
     except Exception as e:
-        send_telegram_message(f"❌ Error fetching tokens from Jupiter Cooking API:\n{e}", CHAT_ID)
+        send_telegram_message(f"❌ Error fetching tokens: {e}", CHAT_ID)
         return []
 
 def format_token_msg(token):
-    name = token.get('name', '?')
-    symbol = token.get('symbol', '?')
-    address = token.get('address', '?')
+    name = token.get('name', 'Unknown')
+    symbol = token.get('symbol', '???')
+    address = token.get('address', '')
     decimals = token.get('decimals', '?')
     logo = token.get('logoURI', '')
-    website = token.get('website', '')
+    website = token.get('extensions', {}).get('website', 'N/A')
 
-    jupiter_link = f"https://jup.ag/swap/SOL-{address}"
+    jupiter_link = f"https://jup.ag/swap?inputCurrency=SOL&outputCurrency={address}"
     dex_link = f"https://dexscreener.com/solana/{address}"
 
     msg = (
         f"⏺ | 🪙 *{name}* / `${symbol}`\n"
-        f"🆕 New Token Detected on *Solana* via Jupiter Scraper\n"
+        f"🆕 New Token Detected on *Solana* via Jupiter API\n"
         f"🆔 `{address}`\n"
         f"🔢 Decimals: `{decimals}`\n"
-        f"🌐 Website: {website if website else 'N/A'}\n"
+        f"🌐 Website: {website}\n"
         f"[🖼 Logo]({logo})\n\n"
         f"[📍 View on DexScreener]({dex_link})\n"
         f"[🟢 Swap on Jupiter]({jupiter_link})\n\n"
@@ -80,14 +80,24 @@ def format_token_msg(token):
     return msg
 
 def run_bot():
-    send_telegram_message("🚀 Coin Updater Bot Started! (Using Jupiter Pro Scraper)", CHAT_ID, inline_keyboard)
+    inline_keyboard = {
+        "inline_keyboard": [
+            [{"text": "🔗 Refer Friends", "switch_inline_query": "invite "}],
+            [{"text": "💰 Donate", "url": f"https://t.me/donate?wallet={DONATION_WALLET}"}],
+            [{"text": "📢 Join Our Group", "url": "https://t.me/digistoryan"}]
+        ]
+    }
+
+    send_telegram_message("🚀 Coin Updater Bot Started!", CHAT_ID, inline_keyboard)
 
     while True:
-        tokens = scrape_tokens_from_jup()
+        tokens = fetch_tokens()
         if not tokens:
-            send_telegram_message("⚠️ No tokens found on Jupiter Pro Cooking page.", CHAT_ID, inline_keyboard)
+            send_telegram_message("⚠️ No new Solana tokens found.", CHAT_ID, inline_keyboard)
+            time.sleep(180)
+            continue
 
-        for token in tokens[:5]:  # Limit to 5 tokens per run
+        for token in tokens[:5]:
             address = token.get('address')
             if not address or address in posted_tokens:
                 continue
@@ -95,9 +105,9 @@ def run_bot():
             msg = format_token_msg(token)
             send_telegram_message(msg, CHAT_ID, inline_keyboard)
             posted_tokens.append(address)
-            time.sleep(3)
+            time.sleep(3)  # avoid spamming telegram too fast
 
-        time.sleep(180)
+        time.sleep(180)  # wait 3 minutes before next check
 
 if __name__ == "__main__":
     threading.Thread(target=run_bot, daemon=True).start()
