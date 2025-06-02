@@ -1,24 +1,17 @@
-from flask import Flask
-import threading
 import requests
-import time
 import json
-import os
+import time
+import threading
+from flask import Flask
 from collections import deque
 
-# === Web Server (for Fly.io health check) ===
 app = Flask(__name__)
 
-@app.route('/')
-def home():
-    return "✅ Coin Updater Bot is Running"
-
-# === Telegram Bot Configuration ===
 BOT_TOKEN = "7639604753:AAH6_rlQAFgoPr2jlShOA5SKgLT57Br_BxU"
 CHAT_ID = "7636990835"
 DONATION_WALLET = "79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz"
 
-posted_tokens = deque(maxlen=250)  # Prevent reposting same tokens
+posted_tokens = deque(maxlen=250)
 
 inline_keyboard = {
     "inline_keyboard": [
@@ -28,7 +21,6 @@ inline_keyboard = {
     ]
 }
 
-# === Telegram Message Sender ===
 def send_telegram_message(msg, chat_id, reply_markup=None):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
@@ -40,44 +32,55 @@ def send_telegram_message(msg, chat_id, reply_markup=None):
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
     try:
-        requests.post(url, data=payload, timeout=10)
+        resp = requests.post(url, data=payload, timeout=10)
+        resp.raise_for_status()
     except Exception as e:
-        print(f"❌ Send error: {e}", flush=True)
+        print(f"❌ Telegram send error: {e}", flush=True)
 
-# === Jupiter Token Fetcher ===
-def fetch_tokens():
+def scrape_tokens_from_jup():
+    url = "https://jup.ag/pro?tab=cooking"
     try:
-        url = "https://quote-api.jup.ag/v1/tokens"
         res = requests.get(url, timeout=10)
         res.raise_for_status()
-        data = res.json()
-        tokens = data.get("tokens", [])
-        sol_tokens = []
-        for t in tokens:
-            if t.get("chainId") == 101:
-                symbol = t.get("symbol", "").lower()
-                if symbol in ["sol", "wsol", "usdc", "usdt"]:
-                    continue
-                sol_tokens.append({
-                    "address": t.get("address"),
-                    "name": t.get("name"),
-                    "symbol": t.get("symbol"),
-                    "decimals": t.get("decimals"),
-                    "logoURI": t.get("logoURI"),
-                    "website": t.get("extensions", {}).get("website", "")
-                })
-        return sol_tokens
+        html = res.text
+
+        # The tokens are inside a script tag as JSON (look for window.__INITIAL_STATE__=)
+        prefix = "window.__INITIAL_STATE__="
+        start = html.find(prefix)
+        if start == -1:
+            print("Could not find tokens JSON in page")
+            return []
+        start += len(prefix)
+        end = html.find(";</script>", start)
+        if end == -1:
+            print("Could not find end of tokens JSON")
+            return []
+        json_text = html[start:end]
+        data = json.loads(json_text)
+
+        # Navigate the JSON structure to tokens on Solana chain (chainId=101)
+        # The structure may be: data.tokens.tokens or similar — let's try
+        tokens = []
+        if "tokens" in data and "tokens" in data["tokens"]:
+            all_tokens = data["tokens"]["tokens"]
+            for t in all_tokens.values():
+                if t.get("chainId") == 101:
+                    symbol = t.get("symbol", "").lower()
+                    # Filter out main tokens if desired
+                    if symbol in ["sol", "wsol", "usdc", "usdt"]:
+                        continue
+                    tokens.append(t)
+        else:
+            print("Tokens not found in parsed JSON")
+            return []
+
+        return tokens
+
     except Exception as e:
-        send_telegram_message(f"❌ Error fetching Jupiter tokens:\n{e}", CHAT_ID)
+        send_telegram_message(f"❌ Error scraping Jupiter tokens:\n{e}", CHAT_ID)
         return []
 
-# === Token Detail Fetcher (no extra call needed) ===
-def fetch_token_data(address):
-    # Jupiter API token list already has metadata, so no extra fetch needed
-    return {}
-
-# === Token Info Formatter ===
-def format_token_msg(token, info=None):
+def format_token_msg(token):
     name = token.get('name', '?')
     symbol = token.get('symbol', '?')
     address = token.get('address', '?')
@@ -85,12 +88,12 @@ def format_token_msg(token, info=None):
     logo = token.get('logoURI', '')
     website = token.get('website', '')
 
-    jupiter_link = f"https://jup.ag/swap?inputCurrency=SOL&outputCurrency={address}"
+    jupiter_link = f"https://jup.ag/swap/SOL-{address}"
     dex_link = f"https://dexscreener.com/solana/{address}"
 
     msg = (
         f"⏺ | 🪙 *{name}* / `${symbol}`\n"
-        f"🆕 New Token Detected on *Solana* via Jupiter API\n"
+        f"🆕 New Token Detected on *Solana* via Jupiter Scraper\n"
         f"🆔 `{address}`\n"
         f"🔢 Decimals: `{decimals}`\n"
         f"🌐 Website: {website if website else 'N/A'}\n"
@@ -101,53 +104,26 @@ def format_token_msg(token, info=None):
     )
     return msg
 
-# === Bot Logic ===
 def run_bot():
-    send_telegram_message("🚀 Coin Updater Bot Started!", CHAT_ID, inline_keyboard)
-
-    # Welcome message (sent once)
-    if not os.path.exists("welcome_sent.flag"):
-        welcome_text = (
-            "👋 Welcome to @coinupdater_bot!\n\n"
-            "This bot automatically tracks and posts *newly launched tokens* on the Solana blockchain.\n\n"
-            "🔍 What It Does:\n"
-            "• Scans newest tokens from Jupiter API\n"
-            "• Posts:\n"
-            "  ├ 💸 Token info & links\n"
-            "  ├ 📊 Market data via DexScreener link\n"
-            "  ├ 🟢 Jupiter Swap link\n\n"
-            f"💰 Support the bot: `{DONATION_WALLET}`\n\n"
-            "✅ Get instant alerts for *real* Solana tokens!"
-        )
-        send_telegram_message(welcome_text, CHAT_ID, inline_keyboard)
-        with open("welcome_sent.flag", "w") as f:
-            f.write("ok")
+    send_telegram_message("🚀 Coin Updater Bot Started! (Using Jupiter Pro Scraper)", CHAT_ID, inline_keyboard)
 
     while True:
-        try:
-            tokens = fetch_tokens()
+        tokens = scrape_tokens_from_jup()
+        if not tokens:
+            send_telegram_message("⚠️ No tokens found on Jupiter Pro Cooking page.", CHAT_ID, inline_keyboard)
 
-            if not tokens:
-                send_telegram_message("⚠️ No Solana tokens found.", CHAT_ID, inline_keyboard)
+        for token in tokens[:5]:  # Limit to 5 tokens per run
+            address = token.get('address')
+            if not address or address in posted_tokens:
+                continue
 
-            for token in tokens[:5]:  # Post top 5 new tokens
-                address = token.get('address')
-                if not address or address in posted_tokens:
-                    continue
+            msg = format_token_msg(token)
+            send_telegram_message(msg, CHAT_ID, inline_keyboard)
+            posted_tokens.append(address)
+            time.sleep(3)
 
-                info = fetch_token_data(address)  # Not used but kept for compatibility
-                msg = format_token_msg(token, info)
-                send_telegram_message(msg, CHAT_ID, inline_keyboard)
-                posted_tokens.append(address)
-                time.sleep(3)
+        time.sleep(180)
 
-            time.sleep(180)  # Check every 3 minutes
-
-        except Exception as e:
-            send_telegram_message(f"❌ Bot crashed: {e}", CHAT_ID, inline_keyboard)
-            time.sleep(30)
-
-# === Launch ===
 if __name__ == "__main__":
     threading.Thread(target=run_bot, daemon=True).start()
     app.run(host="0.0.0.0", port=8080)
