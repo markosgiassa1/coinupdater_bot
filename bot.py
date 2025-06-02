@@ -19,12 +19,9 @@ CHAT_ID = "7636990835"
 DONATION_WALLET = "79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz"
 
 # Cache to prevent reposting
-posted_tokens = deque(maxlen=300)
-
-# Meme keywords to filter
 MEME_KEYWORDS = ['dog', 'pepe', 'cat', 'elon', 'moon', 'baby', 'inu', 'panda', 'bonk', 'rat', 'wagmi', 'meme']
 
-# Telegram message sender
+# Function to send messages via Telegram
 def send_telegram_message(text, reply_markup=None):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
@@ -45,7 +42,7 @@ def send_telegram_message(text, reply_markup=None):
     except Exception as e:
         print(f"❌ Error sending message: {e}")
 
-# Get tokens from Jupiter
+# Function to fetch tradable tokens from Jupiter
 def fetch_tradable_tokens():
     url = "https://api.jup.ag/tokens/v1/mints/all"
     try:
@@ -59,7 +56,7 @@ def fetch_tradable_tokens():
         print(f"❌ Error fetching tokens: {e}")
         return []
 
-# Get token details from DexScreener
+# Function to fetch token details from DexScreener
 def fetch_token_data(address):
     url = f"https://api.dexscreener.com/latest/dex/pairs/solana/{address}"
     try:
@@ -70,7 +67,7 @@ def fetch_token_data(address):
         print(f"❌ DexScreener error: {e}")
     return None
 
-# Format message
+# Function to format the token message
 def format_token_message(token, info):
     name = token.get("name", "Unknown")
     symbol = token.get("symbol", "???")
@@ -102,11 +99,11 @@ def format_token_message(token, info):
         )
     return msg
 
-# Bot runner
+# Main bot function
 def run_bot():
     print("🚀 Meme Bot Started!")
 
-    # Welcome message once
+    # Send welcome message once
     send_telegram_message(
         "👋 Welcome to *Meme Token Updater Bot*! \n\nGet the latest new meme tokens on Solana.\n"
         "Use the buttons below to refer friends or join our group.",
@@ -139,7 +136,7 @@ def run_bot():
         print("⏳ Sleeping 3 minutes...\n")
         time.sleep(180)
 
-# Main entry point
+# Entry point
 if __name__ == "__main__":
     threading.Thread(target=run_bot, daemon=True).start()
     app.run(host="0.0.0.0", port=8080)
