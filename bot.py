@@ -100,15 +100,29 @@ def run_bot():
     send_telegram_message("🚀 Meme Bot Started!")
 
     # Send welcome message only once
-    if not os.path.exists("welcome_sent.flag"):
-        welcome_text = (
-            "👋 Welcome to @coinupdater_bot!\n\n"
-            "Get the latest meme & Solana tokens live.\n"
-            "Use the buttons below to refer friends or join our group."
-        )
-        send_telegram_message(welcome_text, inline_keyboard)
-        with open("welcome_sent.flag", "w") as f:
-            f.write("ok")
+    welcome_text = (
+    "👋 Welcome to @coinupdater_bot!\n\n"
+    "This bot automatically tracks and posts newly launched meme tokens on the Solana blockchain.\n\n"
+    "🔍 *How It Works:*\n"
+    "• Scans the top 100 new tokens from Jupiter Aggregator\n"
+    "• Filters for meme-related tokens: `DOG`, `PEPE`, `CAT`, `ELON`, `BABY`, `INU`, etc\n"
+    "• Verifies the tokens via DexScreener\n"
+    "• Posts live stats like:\n"
+    "  ├ 💸 Price (SOL & USD)\n"
+    "  ├ 📊 Market Cap\n"
+    "  ├ 🔁 24h Volume\n"
+    "  ├ 💧 Liquidity Pool (LP)\n"
+    "  └ 🪙 Number of Holders\n\n"
+    "📢 *Example Message Format:*\n"
+    "`DOGEPEPE / $DPEPE`\n"
+    "`0.0012 SOL ($0.15)` | MCap: `$250K` | Vol 24h: `12K SOL`\n"
+    "LP: `300 SOL` | Holders: `192`\n"
+    "[View on DexScreener](https://dexscreener.com/solana/) | [Buy on Jupiter](https://jup.ag)\n\n"
+    "📣 Use the buttons below to refer friends or join our group.\n"
+    f"💰 *Support this bot:* `{DONATION_WALLET}`\n\n"
+    "✅ Enjoy fast alpha alerts and instant meme token discoveries!"
+    )
+    send_telegram_message(welcome_text, inline_keyboard)
 
     while True:
         try:
