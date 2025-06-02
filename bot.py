@@ -46,9 +46,7 @@ def fetch_tokens():
     try:
         res = requests.get("https://cache.jup.ag/tokens", timeout=10)
         res.raise_for_status()
-        tokens = res.json()[:100]
-        meme_keywords = ['dog', 'pepe', 'cat', 'elon', 'moon', 'baby', 'inu']
-        return [t for t in tokens if any(k in t['name'].lower() for k in meme_keywords)]
+        return res.json()[:100]  # No filtering: show all top 100 tokens
     except Exception as e:
         send_telegram_message(f"❌ Error fetching tokens: {e}")
         return []
@@ -64,10 +62,15 @@ def fetch_token_data(address):
         send_telegram_message(f"❌ DexScreener exception: {e}")
     return {}
 
+def is_meme_token(name):
+    meme_keywords = ['dog', 'pepe', 'cat', 'elon', 'moon', 'baby', 'inu', 'bonk', 'shib', 'meme', 'pump']
+    return any(k in name.lower() for k in meme_keywords)
+
 def format_token_msg(token, info):
     name = token['name']
     symbol = token['symbol']
     address = token['address']
+    emoji = "🐶" if is_meme_token(name) else "🧠"
 
     price_sol = float(info.get("priceNative", 0))
     price_usd = float(info.get("priceUsd", 0))
@@ -83,8 +86,8 @@ def format_token_msg(token, info):
     holders_display = f"{holders}" if holders not in (None, "?", 0) else "❌"
 
     return (
-        f"⏺ | 🐶 *{name}* / `${symbol}`\n"
-        f"🆕 New Meme Token | 🟢 Launched recently\n"
+        f"⏺ | {emoji} *{name}* / `${symbol}`\n"
+        f"🆕 New Token | 🟢 Just Launched\n"
         f"💸 `{price_sol:.4f} SOL` (${price_usd:.2f})\n"
         f"📊 Mkt Cap: `${mcap:,}` | 🔁 Vol 24h: `{volume_display}`\n"
         f"💧 LP: `{liquidity_display}` | 🪙 Holders: `{holders_display}`\n\n"
@@ -96,11 +99,11 @@ def format_token_msg(token, info):
 def run_bot():
     send_telegram_message("🚀 Meme Bot Started!")
 
-    # Optional welcome message only once
+    # Send welcome message only once
     if not os.path.exists("welcome_sent.flag"):
         welcome_text = (
             "👋 Welcome to @coinupdater_bot!\n\n"
-            "Get the latest meme tokens on Solana.\n"
+            "Get the latest meme & Solana tokens live.\n"
             "Use the buttons below to refer friends or join our group."
         )
         send_telegram_message(welcome_text, inline_keyboard)
