@@ -40,20 +40,31 @@ def send_telegram_message(msg, chat_id, reply_markup=None):
         print(f"❌ Telegram send error: {e}", flush=True)
 
 def fetch_tokens():
-    url = "https://cache.jup.ag/api/tokens"
+    url = "https://api.dexscreener.com/latest/dex/tokens/solana"
     try:
         res = requests.get(url, timeout=10)
         res.raise_for_status()
         data = res.json()
+
+        # data["tokens"] is a list of tokens info
         tokens = data.get("tokens", [])
         sol_tokens = []
+
         for t in tokens:
-            if t.get("chainId") == 101:  # Solana mainnet
-                symbol = t.get("symbol", "").lower()
-                if symbol in ["sol", "wsol", "usdc", "usdt"]:
-                    continue
-                sol_tokens.append(t)
+            symbol = t.get("symbol", "").lower()
+            if symbol in ["sol", "wsol", "usdc", "usdt"]:
+                continue
+            sol_tokens.append({
+                "name": t.get("name", "Unknown"),
+                "symbol": t.get("symbol", "???"),
+                "address": t.get("address", ""),
+                "decimals": t.get("decimals", "?"),
+                "logoURI": t.get("logoURI", ""),
+                "website": t.get("website", "N/A")
+            })
+
         return sol_tokens
+
     except Exception as e:
         send_telegram_message(f"❌ Error fetching tokens: {e}", CHAT_ID)
         return []
