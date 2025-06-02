@@ -49,7 +49,9 @@ def send_telegram_message(msg, chat_id, reply_markup=None):
 def fetch_tokens():
     try:
         res = requests.get("https://cache.jup.ag/tokens", timeout=10)
-        return res.json()  # Return all tokens, not just top 100
+        tokens = res.json()[:100]
+        #meme_keywords = ['dog', 'pepe', 'cat', 'elon', 'moon', 'baby', 'inu', 'panda', 'bonk', 'rat', 'wagmi', 'meme']
+        #return [t for t in tokens if any(k in t['name'].lower() for k in meme_keywords)]
     except Exception as e:
         print(f"❌ Token fetch error: {e}", flush=True)
         return []
@@ -78,8 +80,8 @@ def format_token_msg(token, info):
     holders = info.get("holders", "?")
 
     return (
-        f"⏺ | 📈 *{name}* / `${symbol}`\n"
-        f"🆕 Token with Live Data\n"
+        f"⏺ | 🐶 *{name}* / `${symbol}`\n"
+        f"🆕 New Meme Token | 🟢 Launched recently\n"
         f"💸 `{price_sol:.4f} SOL` (${price_usd:.2f})\n"
         f"📊 Mkt Cap: `${mcap:,}` | 🔁 Vol 24h: `{volume:,} SOL`\n"
         f"💧 LP: `{liquidity:,} SOL` | 🪙 Holders: `{holders}`\n\n"
@@ -90,12 +92,12 @@ def format_token_msg(token, info):
 
 # === Bot Runner ===
 def run_bot():
-    send_telegram_message("🚀 Token Bot Started!", CHAT_ID)
+    send_telegram_message("🚀 Meme Bot Started!", CHAT_ID)
 
     if not os.path.exists("welcome_sent.flag"):
         welcome_text = (
             "👋 Welcome to @coinupdater_bot!\n\n"
-            "Now scanning and sharing all tokens with live data on Solana.\n"
+            "Get the latest meme tokens on Solana.\n"
             "Use the buttons below to refer friends or join our group."
         )
         send_telegram_message(welcome_text, CHAT_ID, inline_keyboard)
@@ -105,9 +107,11 @@ def run_bot():
     while True:
         try:
             tokens = fetch_tokens()
-            found = 0
 
-            for token in tokens:
+            if not tokens:
+                send_telegram_message("⚠️ No meme tokens found.", CHAT_ID)
+
+            for token in tokens[:5]:
                 address = token['address']
                 if address in posted_tokens:
                     continue
@@ -117,14 +121,10 @@ def run_bot():
                     msg = format_token_msg(token, info)
                     send_telegram_message(msg, CHAT_ID, inline_keyboard)
                     posted_tokens.append(address)
-                    found += 1
                     time.sleep(3)
-
-                if found >= 5:
-                    break  # Only post up to 5 tokens per loop
-
-            if found == 0:
-                send_telegram_message("⚠️ No tokens with live data found.", CHAT_ID)
+                else:
+                    warn_msg = f"⚠️ `{token['name']}` has no Dex info.\n`{address}`"
+                    send_telegram_message(warn_msg, CHAT_ID)
 
             time.sleep(180)
 
