@@ -97,8 +97,6 @@ def format_token_msg(token, info):
     )
 
 def run_bot():
-    send_telegram_message("🚀 Meme Bot Started!")
-
     # Send welcome message only once
     welcome_text = (
     "👋 Welcome to @coinupdater_bot!\n\n"
