@@ -113,7 +113,7 @@ HTML_TEMPLATE = """
 
       // Use CORS-compatible RPC endpoints
       const customRPC = {
-        "mainnet-beta": "https://mainnet.helius-rpc.com/?api-key=9867d904-fdcc-46b7-b5b1-c9ae880bd41d",
+        "mainnet-beta": "https://mainnet.helius-rpc.com/",
         "devnet": "https://api.devnet.solana.com"
       };
 
@@ -155,8 +155,3 @@ def index():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
-
-
-
-Transaction failed: failed to get recent blockhash: Error: 401 Unauthorized: {"jsonrpc":"2.0","error":{"code":-32401,"message":"missing api key"}}
-
