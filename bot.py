@@ -80,16 +80,13 @@ HTML_TEMPLATE = """
     let provider = null;
     let publicKey = null;
 
-    const customRPC = {
-      "mainnet-beta": "https://mainnet.helius-rpc.com/?api-key=9867d904-fdcc-46b7-b5b1-c9ae880bd41d",
-      "devnet": "https://devnet.helius-rpc.com/?api-key=9867d904-fdcc-46b7-b5b1-c9ae880bd41d"
-    };
-
     connectBtn.addEventListener('click', async () => {
       if (window.solana?.isPhantom) {
         provider = window.solana;
+      } else if (window.solflare?.isSolflare) {
+        provider = window.solflare;
       } else {
-        status.innerText = "⚠️ No wallet detected. Open this in Phantom.";
+        status.innerText = "⚠️ No wallet detected. Open this in Phantom or Solflare.";
         qr.style.display = "block";
         return;
       }
@@ -113,7 +110,14 @@ HTML_TEMPLATE = """
       }
 
       const network = networkSelect.value;
-      const connection = new solanaWeb3.Connection(customRPC[network], 'confirmed');
+
+      // Use CORS-compatible RPC endpoints
+      const customRPC = {
+        "mainnet-beta": "https://mainnet.helius-rpc.com/?api-key=9867d904-fdcc-46b7-b5b1-c9ae880bd41d",
+        "devnet": "https://api.devnet.solana.com"
+      };
+
+      const connection = new solanaWeb3.Connection(customRPC[network], "confirmed");
 
       const recipientPubkey = new solanaWeb3.PublicKey("{{ wallet }}");
 
@@ -130,11 +134,11 @@ HTML_TEMPLATE = """
         const { blockhash } = await connection.getLatestBlockhash();
         transaction.recentBlockhash = blockhash;
 
-        const signed = await provider.signTransaction(transaction);
+        let signed = await provider.signTransaction(transaction);
         const signature = await connection.sendRawTransaction(signed.serialize());
         await connection.confirmTransaction(signature);
 
-        status.innerText = "✅ Transaction successful! Signature:\n" + signature;
+        status.innerText = "✅ Transaction successful!\\nSignature: " + signature;
       } catch (err) {
         console.error("Transaction failed:", err);
         status.innerText = "❌ Transaction failed: " + err.message;
@@ -151,3 +155,8 @@ def index():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
+
+
+
+Transaction failed: failed to get recent blockhash: Error: 401 Unauthorized: {"jsonrpc":"2.0","error":{"code":-32401,"message":"missing api key"}}
+
