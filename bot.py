@@ -31,6 +31,10 @@ HTML_TEMPLATE = """
       cursor: pointer;
       margin: 20px;
     }
+    .button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
     img.qr {
       width: 220px;
       margin: 20px auto;
@@ -55,7 +59,8 @@ HTML_TEMPLATE = """
   <button class="button" id="connectBtn">🔗 Connect Wallet</button>
   <div id="status">Click "Connect Wallet" to begin.</div>
 
-  <!-- Phantom wallet detection and connection -->
+  <!-- Solflare Adapter (optional fallback for Solflare mobile app) -->
+  <script src="https://unpkg.com/@solana/wallet-adapter-wallets@0.9.14/lib/cjs/index.umd.min.js"></script>
   <script>
     document.addEventListener("DOMContentLoaded", () => {
       const status = document.getElementById("status");
@@ -63,29 +68,45 @@ HTML_TEMPLATE = """
       const btn = document.getElementById("connectBtn");
 
       btn.addEventListener("click", async () => {
-        const provider = window?.phantom?.solana || window?.solana;
+        let provider = null;
 
-        if (!provider || !provider.isPhantom) {
-          status.innerText = "⚠️ Phantom Wallet not detected. Open in the Phantom app or install the extension.";
+        // Phantom detection
+        if (window?.phantom?.solana?.isPhantom) {
+          provider = window.phantom.solana;
+          status.innerText = "🔍 Phantom wallet detected.";
+        }
+        // Solflare detection
+        else if (window?.solflare?.isSolflare) {
+          provider = window.solflare;
+          status.innerText = "🔍 Solflare wallet detected.";
+        }
+
+        // No wallet found
+        if (!provider) {
+          status.innerText = "⚠️ No supported wallet detected (Phantom or Solflare). Scan the QR with a mobile wallet.";
           qr.style.display = "block";
           return;
         }
 
         try {
-          status.innerText = "🔄 Requesting wallet connection...";
+          status.innerText += "\\n🔄 Requesting connection...";
           const resp = await provider.connect();
-          const publicKey = resp.publicKey?.toString();
+          const publicKey = resp?.publicKey?.toString() || provider.publicKey?.toString();
 
           if (publicKey) {
             status.innerText = "✅ Connected: " + publicKey;
             btn.innerText = "✅ Connected";
             btn.disabled = true;
           } else {
-            status.innerText = "❌ Failed to retrieve public key.";
+            status.innerText = "❌ Connected, but no public key returned.";
           }
         } catch (err) {
-          console.error("Wallet connection error:", err);
-          status.innerText = "❌ User rejected the connection or something went wrong.";
+          console.error("Connection error:", err);
+          if (err?.code === 4001 || (err?.message?.toLowerCase().includes("rejected"))) {
+            status.innerText = "❌ Connection rejected by user.";
+          } else {
+            status.innerText = "❌ Failed to connect. Please try again.";
+          }
         }
       });
     });
