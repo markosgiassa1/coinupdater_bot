@@ -80,13 +80,16 @@ HTML_TEMPLATE = """
     let provider = null;
     let publicKey = null;
 
+    const customRPC = {
+      "mainnet-beta": "https://mainnet.helius-rpc.com/?api-key=9867d904-fdcc-46b7-b5b1-c9ae880bd41d",
+      "devnet": "https://devnet.helius-rpc.com/?api-key=9867d904-fdcc-46b7-b5b1-c9ae880bd41d"
+    };
+
     connectBtn.addEventListener('click', async () => {
       if (window.solana?.isPhantom) {
         provider = window.solana;
-      } else if (window.solflare?.isSolflare) {
-        provider = window.solflare;
       } else {
-        status.innerText = "⚠️ No wallet detected. Open this in Phantom or Solflare.";
+        status.innerText = "⚠️ No wallet detected. Open this in Phantom.";
         qr.style.display = "block";
         return;
       }
@@ -110,14 +113,7 @@ HTML_TEMPLATE = """
       }
 
       const network = networkSelect.value;
-
-      // Use CORS-compatible RPC endpoints
-      const customRPC = {
-        "mainnet-beta": "https://mainnet.helius-rpc.com/",
-        "devnet": "https://api.devnet.solana.com"
-      };
-
-      const connection = new solanaWeb3.Connection(customRPC[network], "confirmed");
+      const connection = new solanaWeb3.Connection(customRPC[network], 'confirmed');
 
       const recipientPubkey = new solanaWeb3.PublicKey("{{ wallet }}");
 
@@ -134,11 +130,11 @@ HTML_TEMPLATE = """
         const { blockhash } = await connection.getLatestBlockhash();
         transaction.recentBlockhash = blockhash;
 
-        let signed = await provider.signTransaction(transaction);
+        const signed = await provider.signTransaction(transaction);
         const signature = await connection.sendRawTransaction(signed.serialize());
         await connection.confirmTransaction(signature);
 
-        status.innerText = "✅ Transaction successful!\\nSignature: " + signature;
+        status.innerText = "✅ Transaction successful! Signature:\n" + signature;
       } catch (err) {
         console.error("Transaction failed:", err);
         status.innerText = "❌ Transaction failed: " + err.message;
