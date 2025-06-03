@@ -46,6 +46,7 @@ HTML_TEMPLATE = """
       margin-top: 20px;
       color: #ccc;
       font-size: 0.9em;
+      white-space: pre-wrap;
     }
   </style>
 </head>
@@ -55,17 +56,17 @@ HTML_TEMPLATE = """
   <p><code>{{ wallet }}</code></p>
   <img id="qrCode" class="qr" src="{{ qr_url }}" alt="QR Code" />
   
-  <button class="button" onclick="connectWallet()">🔗 Connect Wallet</button>
+  <button class="button" id="connectBtn">🔗 Connect Wallet</button>
   <div id="status">Click "Connect Wallet" to begin.</div>
 
   <script>
-    async function connectWallet() {
-      const status = document.getElementById("status");
-      const qr = document.getElementById("qrCode");
+    const status = document.getElementById("status");
+    const qr = document.getElementById("qrCode");
+    const btn = document.getElementById("connectBtn");
 
+    btn.addEventListener('click', async () => {
       let provider = null;
 
-      // Check wallet availability
       if (window.solana?.isPhantom) {
         provider = window.solana;
       } else if (window.solflare?.isSolflare) {
@@ -81,19 +82,23 @@ HTML_TEMPLATE = """
       }
 
       try {
-        status.innerText = "🔄 Connecting...";
-        const response = await provider.connect({ onlyIfTrusted: false });
-        const pubKey = response.publicKey?.toString() || "(unknown)";
-        status.innerText = "✅ Connected: " + pubKey;
+        status.innerText = "🔄 Waiting for wallet approval...";
+        // Always prompt user, don't use onlyIfTrusted
+        const resp = await provider.connect(); 
+        if (resp.publicKey) {
+          status.innerText = "✅ Connected: " + resp.publicKey.toString();
+        } else {
+          status.innerText = "✅ Connected, but no publicKey received.";
+        }
       } catch (err) {
         console.error("Connection failed:", err);
-        if (err.code === 4001 || err.message?.includes("User rejected")) {
+        if (err.code === 4001 || (err.message && err.message.toLowerCase().includes("rejected"))) {
           status.innerText = "❌ Connection rejected by user.";
         } else {
-          status.innerText = "❌ Wallet connection failed. Try reopening in wallet app.";
+          status.innerText = "❌ Wallet connection failed. Please try again or open in wallet app.";
         }
       }
-    }
+    });
   </script>
 </body>
 </html>
