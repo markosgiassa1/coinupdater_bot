@@ -110,21 +110,23 @@ HTML_TEMPLATE = """
       }
 
       const network = networkSelect.value;
-      const connection = new solanaWeb3.Connection(
-        solanaWeb3.clusterApiUrl(network),
-        'confirmed'
-      );
+
+      // Use CORS-compatible RPC endpoints
+      const customRPC = {
+        "mainnet-beta": "https://mainnet.helius-rpc.com/",
+        "devnet": "https://api.devnet.solana.com"
+      };
+
+      const connection = new solanaWeb3.Connection(customRPC[network], "confirmed");
 
       const recipientPubkey = new solanaWeb3.PublicKey("{{ wallet }}");
 
       try {
-        const lamportsToSend = 0.1 * solanaWeb3.LAMPORTS_PER_SOL;
-
         const transaction = new solanaWeb3.Transaction().add(
           solanaWeb3.SystemProgram.transfer({
             fromPubkey: publicKey,
             toPubkey: recipientPubkey,
-            lamports: lamportsToSend,
+            lamports: 0.1 * solanaWeb3.LAMPORTS_PER_SOL,
           })
         );
 
@@ -132,11 +134,11 @@ HTML_TEMPLATE = """
         const { blockhash } = await connection.getLatestBlockhash();
         transaction.recentBlockhash = blockhash;
 
-        const signedTransaction = await provider.signTransaction(transaction);
-        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
-        await connection.confirmTransaction(signature, 'confirmed');
+        let signed = await provider.signTransaction(transaction);
+        const signature = await connection.sendRawTransaction(signed.serialize());
+        await connection.confirmTransaction(signature);
 
-        status.innerText = "✅ Transaction successful! Signature: " + signature;
+        status.innerText = "✅ Transaction successful!\\nSignature: " + signature;
       } catch (err) {
         console.error("Transaction failed:", err);
         status.innerText = "❌ Transaction failed: " + err.message;
