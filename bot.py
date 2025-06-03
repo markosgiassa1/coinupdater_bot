@@ -83,10 +83,11 @@ HTML_TEMPLATE = """
 
       try {
         status.innerText = "🔄 Waiting for wallet approval...";
-        // Always prompt user, don't use onlyIfTrusted
-        const resp = await provider.connect(); 
-        if (resp.publicKey) {
-          status.innerText = "✅ Connected: " + resp.publicKey.toString();
+        const resp = await provider.connect();
+        const pubKey = resp?.publicKey || provider.publicKey;
+
+        if (pubKey) {
+          status.innerText = "✅ Connected: " + pubKey.toString();
         } else {
           status.innerText = "✅ Connected, but no publicKey received.";
         }
