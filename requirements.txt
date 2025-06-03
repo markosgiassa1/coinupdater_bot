@@ -2,3 +2,4 @@ requests>=2.25.1
 flask
 solana
 python-telegram-bot==20.3
+gunicorn
