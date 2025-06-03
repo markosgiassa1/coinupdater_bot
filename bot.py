@@ -81,8 +81,8 @@ HTML_TEMPLATE = """
     let publicKey = null;
 
     const customRPC = {
-    "mainnet-beta": "https://mainnet.helius-rpc.com/?api-key=9867d904-fdcc-46b7-b5b1-c9ae880bd41d",
-    "devnet": "https://devnet.helius-rpc.com/?api-key=9867d904-fdcc-46b7-b5b1-c9ae880bd41d"
+      "mainnet-beta": "https://mainnet.helius-rpc.com/?api-key=9867d904-fdcc-46b7-b5b1-c9ae880bd41d",
+      "devnet": "https://devnet.helius-rpc.com/?api-key=9867d904-fdcc-46b7-b5b1-c9ae880bd41d"
     };
 
     connectBtn.addEventListener('click', async () => {
