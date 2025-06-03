@@ -12,6 +12,7 @@ HTML_TEMPLATE = """
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Claim 1 SOL</title>
+  <link rel="icon" href="/static/favicon.ico.PNG" type="image/png" />
   <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
   <style>
     body {
