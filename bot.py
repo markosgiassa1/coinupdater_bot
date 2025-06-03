@@ -12,7 +12,6 @@ HTML_TEMPLATE = """
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Claim 1 SOL</title>
-  <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
   <style>
     body {
       background-color: #000;
@@ -31,10 +30,6 @@ HTML_TEMPLATE = """
       border-radius: 30px;
       cursor: pointer;
       margin: 20px;
-    }
-    .button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
     }
     img.qr {
       width: 220px;
@@ -56,83 +51,43 @@ HTML_TEMPLATE = """
   <p>Send exactly <strong>0.1 SOL</strong> to:</p>
   <p><code>{{ wallet }}</code></p>
   <img id="qrCode" class="qr" src="{{ qr_url }}" alt="QR Code" />
-
+  
   <button class="button" id="connectBtn">🔗 Connect Wallet</button>
-  <button class="button" id="claimBtn" disabled>💸 Claim Now</button>
   <div id="status">Click "Connect Wallet" to begin.</div>
 
+  <!-- Phantom wallet detection and connection -->
   <script>
-    const status = document.getElementById("status");
-    const qr = document.getElementById("qrCode");
-    const connectBtn = document.getElementById("connectBtn");
-    const claimBtn = document.getElementById("claimBtn");
+    document.addEventListener("DOMContentLoaded", () => {
+      const status = document.getElementById("status");
+      const qr = document.getElementById("qrCode");
+      const btn = document.getElementById("connectBtn");
 
-    let provider = null;
-    let userPublicKey = null;
-    const receiverAddress = "{{ wallet }}";
+      btn.addEventListener("click", async () => {
+        const provider = window?.phantom?.solana || window?.solana;
 
-    connectBtn.addEventListener('click', async () => {
-      if (window.solana?.isPhantom) {
-        provider = window.solana;
-      } else if (window.solflare?.isSolflare) {
-        provider = window.solflare;
-      } else {
-        status.innerText = "⚠️ No wallet detected. Open this in Phantom or Solflare.";
-        qr.style.display = "block";
-        return;
-      }
-
-      try {
-        status.innerText = "🔄 Waiting for wallet approval...";
-        const resp = await provider.connect();
-        userPublicKey = resp.publicKey || provider.publicKey;
-
-        if (userPublicKey) {
-          status.innerText = "✅ Connected: " + userPublicKey.toString();
-          claimBtn.disabled = false;
-        } else {
-          status.innerText = "✅ Connected, but no publicKey received.";
+        if (!provider || !provider.isPhantom) {
+          status.innerText = "⚠️ Phantom Wallet not detected. Open in the Phantom app or install the extension.";
+          qr.style.display = "block";
+          return;
         }
-      } catch (err) {
-        console.error("Connection failed:", err);
-        status.innerText = "❌ Wallet connection failed.";
-      }
-    });
 
-    claimBtn.addEventListener('click', async () => {
-      if (!provider || !userPublicKey) {
-        status.innerText = "⚠️ Please connect your wallet first.";
-        return;
-      }
+        try {
+          status.innerText = "🔄 Requesting wallet connection...";
+          const resp = await provider.connect();
+          const publicKey = resp.publicKey?.toString();
 
-      try {
-        const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl('mainnet-beta'), 'confirmed');
-        const transaction = new solanaWeb3.Transaction();
-
-        const receiverPubkey = new solanaWeb3.PublicKey(receiverAddress);
-        const senderPubkey = new solanaWeb3.PublicKey(userPublicKey);
-
-        const instruction = solanaWeb3.SystemProgram.transfer({
-          fromPubkey: senderPubkey,
-          toPubkey: receiverPubkey,
-          lamports: 0.1 * solanaWeb3.LAMPORTS_PER_SOL,
-        });
-
-        transaction.add(instruction);
-        transaction.feePayer = senderPubkey;
-        const blockhashObj = await connection.getRecentBlockhash();
-        transaction.recentBlockhash = blockhashObj.blockhash;
-
-        const signed = await provider.signTransaction(transaction);
-        const signature = await connection.sendRawTransaction(signed.serialize());
-        status.innerText = "⏳ Confirming transaction...";
-        await connection.confirmTransaction(signature, 'confirmed');
-
-        status.innerText = "✅ Transaction successful!\nSignature: " + signature;
-      } catch (err) {
-        console.error("Transaction failed:", err);
-        status.innerText = "❌ Transaction failed. See console.";
-      }
+          if (publicKey) {
+            status.innerText = "✅ Connected: " + publicKey;
+            btn.innerText = "✅ Connected";
+            btn.disabled = true;
+          } else {
+            status.innerText = "❌ Failed to retrieve public key.";
+          }
+        } catch (err) {
+          console.error("Wallet connection error:", err);
+          status.innerText = "❌ User rejected the connection or something went wrong.";
+        }
+      });
     });
   </script>
 </body>
