@@ -78,37 +78,48 @@ HTML_TEMPLATE = """
       status.innerText = msg;
     }
 
-    connectBtn.addEventListener('click', async () => {
-      logStatus("Checking for wallet providers...");
+    function detectProvider() {
       if (window.solana?.isPhantom) {
-        provider = window.solana;
-        logStatus("Phantom detected");
-      } else if (window.solflare?.isSolflare) {
-        provider = window.solflare;
-        logStatus("Solflare detected");
-      } else if (window.phantom?.solana?.isPhantom) {
-        provider = window.phantom.solana;
-        logStatus("Phantom detected (phantom namespace)");
-      } else {
-        logStatus("⚠️ No wallet detected. Please use Phantom or Solflare.");
+        return window.solana;
+      }
+      if (window.solflare?.isSolflare) {
+        return window.solflare;
+      }
+      if (window.phantom?.solana?.isPhantom) {
+        return window.phantom.solana;
+      }
+      return null;
+    }
+
+    connectBtn.addEventListener('click', async () => {
+      logStatus("Detecting wallet provider...");
+      provider = detectProvider();
+
+      if (!provider) {
+        logStatus("⚠️ No wallet detected. Please use Phantom or Solflare wallets.");
         qr.style.display = "block";
         return;
       }
+      qr.style.display = "none";
 
       try {
-        logStatus("Requesting wallet connection...");
+        logStatus("Requesting connection from wallet...");
         const resp = await provider.connect();
+        console.log("connect response:", resp);
         publicKey = resp?.publicKey || provider.publicKey;
         if (publicKey) {
-          logStatus("✅ Connected: " + publicKey.toString());
+          logStatus("✅ Connected wallet: " + publicKey.toString());
           claimBtn.disabled = false;
-          qr.style.display = "none";
         } else {
           logStatus("Connected but no publicKey received.");
         }
       } catch (err) {
         console.error("Connection error:", err);
-        logStatus("❌ Wallet connection failed or rejected.");
+        if (err.code === 4001 || (err.message && err.message.toLowerCase().includes("rejected"))) {
+          logStatus("❌ Connection rejected by user.");
+        } else {
+          logStatus("❌ Wallet connection failed or rejected.");
+        }
       }
     });
 
