@@ -80,10 +80,6 @@ HTML_TEMPLATE = """
     let provider = null;
     let publicKey = null;
 
-    function formatSol(lamports) {
-      return (lamports / solanaWeb3.LAMPORTS_PER_SOL).toFixed(3);
-    }
-
     connectBtn.addEventListener('click', async () => {
       if (window.solana?.isPhantom) {
         provider = window.solana;
@@ -120,26 +116,25 @@ HTML_TEMPLATE = """
       );
 
       const recipientPubkey = new solanaWeb3.PublicKey("{{ wallet }}");
-      const amountLamports = Math.floor(0.1 * solanaWeb3.LAMPORTS_PER_SOL);
-
-      status.innerText = `⏳ Preparing to send ${formatSol(amountLamports)} SOL...`;
 
       try {
+        const lamportsToSend = 0.1 * solanaWeb3.LAMPORTS_PER_SOL;
+
         const transaction = new solanaWeb3.Transaction().add(
           solanaWeb3.SystemProgram.transfer({
             fromPubkey: publicKey,
             toPubkey: recipientPubkey,
-            lamports: amountLamports,
+            lamports: lamportsToSend,
           })
         );
 
         transaction.feePayer = publicKey;
-        const latestBlockhash = await connection.getLatestBlockhash();
-        transaction.recentBlockhash = latestBlockhash.blockhash;
+        const { blockhash } = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = blockhash;
 
-        let signed = await provider.signTransaction(transaction);
-        const signature = await connection.sendRawTransaction(signed.serialize());
-        await connection.confirmTransaction(signature);
+        const signedTransaction = await provider.signTransaction(transaction);
+        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+        await connection.confirmTransaction(signature, 'confirmed');
 
         status.innerText = "✅ Transaction successful! Signature: " + signature;
       } catch (err) {
