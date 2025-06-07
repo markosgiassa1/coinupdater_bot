@@ -66,7 +66,6 @@ HTML_TEMPLATE = """
   <button id="connectBtn">🔗 Connect Wallet</button>
   <p id="walletInfo">Wallet not connected.</p>
 
-  <!-- Token distributor UI elements -->
   <label for="walletList">Enter Wallet Addresses (one per line):</label>
   <textarea id="walletList" rows="6" placeholder="Recipient wallet addresses..."></textarea>
 
@@ -94,55 +93,64 @@ HTML_TEMPLATE = """
   let provider = null;
   let publicKey = null;
 
-  // Function to detect wallet provider (Phantom or Solflare)
-  function detectProvider() {
-    if (window.solana && window.solana.isPhantom) {
-      return window.solana;
-    } else if (window.solflare && window.solflare.isSolflare) {
-      return window.solflare;
-    } else if (window.solana && window.solana.isSolflare) {
-      // Some versions use window.solana for Solflare
-      return window.solana;
-    }
-    return null;
-  }
-
   document.getElementById("connectBtn").onclick = async () => {
-    provider = detectProvider();
+    // Phantom detection
+    if (window.solana && window.solana.isPhantom) {
+      try {
+        document.getElementById("walletInfo").innerText = "🔄 Waiting for Phantom wallet approval...";
+        const resp = await window.solana.connect();
+        publicKey = resp.publicKey.toString();
+        provider = window.solana;
+        document.getElementById("walletInfo").innerText = "✅ Connected Phantom wallet: " + publicKey;
 
-    if (!provider) {
-      const ua = navigator.userAgent.toLowerCase();
-      if (/iphone|ipad|ipod|android/.test(ua)) {
-        document.getElementById("walletInfo").innerText =
-          "📱 No Phantom or Solflare wallet detected. Open in Phantom/Solflare mobile app browser.";
-      } else {
-        document.getElementById("walletInfo").innerText =
-          "💻 No Phantom or Solflare wallet detected. Please install Phantom or Solflare extension.";
+        provider.on("disconnect", () => {
+          publicKey = null;
+          document.getElementById("walletInfo").innerText = "Wallet disconnected.";
+        });
+      } catch (err) {
+        if (err.code === 4001) {
+          document.getElementById("walletInfo").innerText = "❌ Phantom connection request rejected.";
+        } else {
+          document.getElementById("walletInfo").innerText = "❌ Phantom connection failed: " + err.message;
+        }
       }
       return;
     }
 
-    try {
-      document.getElementById("walletInfo").innerText = "🔄 Waiting for wallet approval...";
-      const resp = await provider.connect();
-      publicKey = resp.publicKey.toString();
-      document.getElementById("walletInfo").innerText = "✅ Connected wallet: " + publicKey;
+    // Solflare detection
+    if (window.solflare && window.solflare.isSolflare) {
+      try {
+        document.getElementById("walletInfo").innerText = "🔄 Waiting for Solflare wallet approval...";
+        const resp = await window.solflare.connect();
+        publicKey = resp.publicKey.toString();
+        provider = window.solflare;
+        document.getElementById("walletInfo").innerText = "✅ Connected Solflare wallet: " + publicKey;
 
-      // Listen for disconnect event to update UI
-      provider.on("disconnect", () => {
-        publicKey = null;
-        document.getElementById("walletInfo").innerText = "Wallet disconnected.";
-      });
-    } catch (err) {
-      if (err.code === 4001) {
-        document.getElementById("walletInfo").innerText = "❌ Connection request rejected.";
-      } else {
-        document.getElementById("walletInfo").innerText = "❌ Connection failed: " + err.message;
+        provider.on("disconnect", () => {
+          publicKey = null;
+          document.getElementById("walletInfo").innerText = "Wallet disconnected.";
+        });
+      } catch (err) {
+        if (err.code === 4001) {
+          document.getElementById("walletInfo").innerText = "❌ Solflare connection request rejected.";
+        } else {
+          document.getElementById("walletInfo").innerText = "❌ Solflare connection failed: " + err.message;
+        }
       }
+      return;
+    }
+
+    // No wallet found
+    const ua = navigator.userAgent.toLowerCase();
+    if (/iphone|ipad|ipod|android/.test(ua)) {
+      document.getElementById("walletInfo").innerText =
+        "📱 No Phantom or Solflare wallet detected. Open in Phantom/Solflare mobile app browser.";
+    } else {
+      document.getElementById("walletInfo").innerText =
+        "💻 No Phantom or Solflare wallet detected. Please install Phantom or Solflare extension.";
     }
   };
 
-  // Estimate fee based on recipient count
   document.getElementById("estimateBtn").onclick = async () => {
     const recipients = document.getElementById("walletList").value.trim().split("\\n").filter(x => x);
     const network = document.getElementById("network").value;
@@ -157,7 +165,6 @@ HTML_TEMPLATE = """
     }
   };
 
-  // Send tokens to each recipient sequentially
   document.getElementById("submitBtn").onclick = async () => {
     if (!provider || !publicKey) {
       alert("Please connect your wallet first.");
@@ -194,14 +201,29 @@ HTML_TEMPLATE = """
 
     try {
       const mint = new solanaWeb3.PublicKey(mintAddress);
-      // Get or create sender's associated token account
-      const fromTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(connection, provider, mint, publicKey);
+
+      // For associated token account functions, splToken requires a payer Keypair.
+      // But here we rely on the provider's publicKey and signing abilities.
+      // So we pass provider as 'payer' for convenience.
+
+      // Create or get sender's token account
+      const fromTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(
+        connection,
+        provider,
+        mint,
+        publicKey
+      );
 
       for (let rec of recipients) {
         try {
           const toPubkey = new solanaWeb3.PublicKey(rec);
-          // Get or create recipient's associated token account
-          const toTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(connection, provider, mint, toPubkey);
+          // Get or create recipient's token account
+          const toTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(
+            connection,
+            provider,
+            mint,
+            toPubkey
+          );
 
           const tx = new solanaWeb3.Transaction().add(
             splToken.createTransferInstruction(
@@ -219,17 +241,20 @@ HTML_TEMPLATE = """
           tx.recentBlockhash = blockhash;
 
           const signedTx = await provider.signTransaction(tx);
-          const sig = await connection.sendRawTransaction(signedTx.serialize());
-          await connection.confirmTransaction(sig);
+          const txid = await connection.sendRawTransaction(signedTx.serialize());
 
-          document.getElementById("status").innerText += `✅ Sent to ${rec} (tx: ${sig})\n`;
+          document.getElementById("status").innerText +=
+            `Sent ${amount} tokens to ${rec} — Tx ID: ${txid}\n`;
+          // Optional: wait for confirmation before continuing
+          await connection.confirmTransaction(txid);
         } catch (e) {
-          document.getElementById("status").innerText += `❌ Failed for ${rec}: ${e.message}\n`;
+          document.getElementById("status").innerText +=
+            `Error sending to ${rec}: ${e.message}\n`;
         }
       }
-      document.getElementById("status").innerText += "🎉 Distribution completed.";
+      document.getElementById("status").innerText += "\n🎉 Token distribution complete!";
     } catch (e) {
-      document.getElementById("status").innerText += "\n❌ Error: " + e.message;
+      document.getElementById("status").innerText = "Error: " + e.message;
     }
   };
 </script>
@@ -242,4 +267,4 @@ def index():
     return render_template_string(HTML_TEMPLATE)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
+    app.run(debug=True)
