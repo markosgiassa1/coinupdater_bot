@@ -7,7 +7,7 @@ HTML_TEMPLATE = """
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>SPL Token Sender</title>
+  <title>SPL Token Distributor</title>
   <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@solana/spl-token@0.3.5/lib/index.iife.js"></script>
   <style>
@@ -16,26 +16,45 @@ HTML_TEMPLATE = """
       color: white;
       font-family: Arial, sans-serif;
       padding: 20px;
+      max-width: 600px;
+      margin: auto;
     }
-    input, textarea, select, button {
-      margin: 10px 0;
-      padding: 10px;
+    label, input, textarea, select, button {
+      display: block;
       width: 100%%;
+      margin-bottom: 15px;
       font-size: 16px;
+    }
+    input, textarea, select {
+      padding: 10px;
       border-radius: 5px;
+      border: none;
+    }
+    textarea {
+      resize: vertical;
     }
     button {
+      padding: 12px;
       background: linear-gradient(to right, #00ff90, #00d178);
       color: black;
       font-weight: bold;
       border: none;
       cursor: pointer;
+      border-radius: 5px;
     }
     #status {
       margin-top: 15px;
       font-size: 14px;
       white-space: pre-wrap;
       color: #ccc;
+      min-height: 80px;
+      background-color: #222;
+      padding: 10px;
+      border-radius: 5px;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 25px;
     }
   </style>
 </head>
@@ -45,19 +64,19 @@ HTML_TEMPLATE = """
   <button id="connectBtn">Connect Wallet</button>
   <p id="walletInfo">Wallet not connected.</p>
 
-  <label>Enter Wallet Addresses (one per line):</label>
+  <label for="walletList">Enter Wallet Addresses (one per line):</label>
   <textarea id="walletList" rows="6" placeholder="Recipient wallet addresses..."></textarea>
 
-  <label>Token Mint Address:</label>
+  <label for="mintAddress">Token Mint Address:</label>
   <input type="text" id="mintAddress" placeholder="Token mint address...">
 
-  <label>Decimals of the Token:</label>
-  <input type="number" id="decimals" placeholder="E.g., 9" min="0" max="18" value="9">
+  <label for="decimals">Token Decimals:</label>
+  <input type="number" id="decimals" placeholder="E.g., 9" min="0" max="18">
 
-  <label>Quantity of Tokens to Send to EACH address:</label>
+  <label for="amount">Quantity of Tokens to Send to EACH address:</label>
   <input type="number" id="amount" placeholder="E.g., 1000" min="0" step="any">
 
-  <label>Select Network:</label>
+  <label for="network">Select Network:</label>
   <select id="network">
     <option value="mainnet-beta">Mainnet</option>
     <option value="devnet">Devnet</option>
@@ -72,23 +91,23 @@ HTML_TEMPLATE = """
     let provider = null;
     let publicKey = null;
 
+    // Connect Wallet - supports Phantom, Solflare, and any injected solana wallet
     document.getElementById("connectBtn").onclick = async () => {
-      if (window.solana?.isPhantom) {
+      if (window.solana) {
         provider = window.solana;
+        try {
+          const resp = await provider.connect();
+          publicKey = resp.publicKey;
+          document.getElementById("walletInfo").innerText = "Connected wallet: " + publicKey.toString();
+        } catch (err) {
+          document.getElementById("walletInfo").innerText = "Connection failed or rejected.";
+        }
       } else {
-        alert("Please install the Phantom wallet extension.");
-        return;
-      }
-
-      try {
-        const resp = await provider.connect();
-        publicKey = resp.publicKey;
-        document.getElementById("walletInfo").innerText = "Connected wallet: " + publicKey.toString();
-      } catch (err) {
-        document.getElementById("walletInfo").innerText = "Connection failed.";
+        alert("Please install a Solana wallet extension like Phantom or Solflare.");
       }
     };
 
+    // Estimate fee based on recipient count
     document.getElementById("estimateBtn").onclick = async () => {
       const recipients = document.getElementById("walletList").value.trim().split("\\n").filter(x => x);
       const network = document.getElementById("network").value;
@@ -96,18 +115,20 @@ HTML_TEMPLATE = """
 
       try {
         const { feeCalculator } = await connection.getRecentBlockhash();
-        const fee = feeCalculator.lamportsPerSignature * (recipients.length + 1); // rough estimate
+        // Rough fee estimate: 1 signature per transfer + 1 for the fee payer
+        const fee = feeCalculator.lamportsPerSignature * (recipients.length + 1);
         document.getElementById("status").innerText = "Estimated fee: " + (fee / solanaWeb3.LAMPORTS_PER_SOL).toFixed(6) + " SOL";
       } catch (e) {
         document.getElementById("status").innerText = "Error estimating fee: " + e.message;
       }
     };
 
+    // Send tokens to each recipient sequentially
     document.getElementById("submitBtn").onclick = async () => {
       const recipients = document.getElementById("walletList").value.trim().split("\\n").filter(x => x);
       const mintAddress = document.getElementById("mintAddress").value.trim();
-      const amountInput = document.getElementById("amount").value.trim();
       const decimalsInput = document.getElementById("decimals").value.trim();
+      const amountInput = document.getElementById("amount").value.trim();
       const network = document.getElementById("network").value;
 
       if (!provider || !publicKey) {
@@ -115,63 +136,45 @@ HTML_TEMPLATE = """
         return;
       }
 
-      if (!mintAddress || !amountInput || recipients.length === 0 || decimalsInput === "") {
-        alert("Please fill out all fields.");
+      if (!mintAddress || !amountInput || !decimalsInput || recipients.length === 0) {
+        alert("Please fill out all fields including decimals.");
+        return;
+      }
+
+      const decimals = parseInt(decimalsInput);
+      if (isNaN(decimals) || decimals < 0 || decimals > 18) {
+        alert("Please enter valid token decimals between 0 and 18.");
         return;
       }
 
       const amount = parseFloat(amountInput);
-      const decimals = parseInt(decimalsInput);
-
       if (isNaN(amount) || amount <= 0) {
-        alert("Please enter a valid amount greater than 0.");
-        return;
-      }
-      if (isNaN(decimals) || decimals < 0 || decimals > 18) {
-        alert("Please enter valid decimals between 0 and 18.");
+        alert("Please enter a valid amount greater than zero.");
         return;
       }
 
       const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl(network), "confirmed");
+      const splToken = window.splToken;
+
+      document.getElementById("status").innerText = "Starting token distribution...\n";
 
       try {
         const mint = new solanaWeb3.PublicKey(mintAddress);
-        // 'provider' acts as the signer and payer for ATA creation, so we pass provider.publicKey and signTransaction.
-        // The splToken methods expect a 'payer' Keypair, but Phantom wallet only signs, so we must use the provider for signing.
-
-        // Load SPL Token namespace
-        const splToken = window.splToken;
-
         // Get or create sender's associated token account
-        const fromTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(
-          connection,
-          provider, // payer/signing provider
-          mint,
-          publicKey
-        );
+        const fromTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(connection, provider, mint, publicKey);
 
-        document.getElementById("status").innerText = `Sender ATA: ${fromTokenAccount.address.toBase58()}`;
-
-        for (const rec of recipients) {
+        for (let rec of recipients) {
           try {
             const toPubkey = new solanaWeb3.PublicKey(rec);
-
-            // Get or create recipient ATA
-            const toTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(
-              connection,
-              provider,
-              mint,
-              toPubkey
-            );
-
-            const rawAmount = BigInt(Math.floor(amount * (10 ** decimals)));
+            // Get or create recipient's associated token account
+            const toTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(connection, provider, mint, toPubkey);
 
             const tx = new solanaWeb3.Transaction().add(
               splToken.createTransferInstruction(
                 fromTokenAccount.address,
                 toTokenAccount.address,
                 publicKey,
-                rawAmount,
+                BigInt(amount * (10 ** decimals)),
                 [],
                 splToken.TOKEN_PROGRAM_ID
               )
@@ -185,13 +188,14 @@ HTML_TEMPLATE = """
             const sig = await connection.sendRawTransaction(signedTx.serialize());
             await connection.confirmTransaction(sig);
 
-            document.getElementById("status").innerText += `\\n✅ Sent to ${rec} | TX: ${sig}`;
+            document.getElementById("status").innerText += `✅ Sent to ${rec} | TX: ${sig}\n`;
           } catch (err) {
-            document.getElementById("status").innerText += `\\n❌ Failed to send to ${rec}: ${err.message}`;
+            document.getElementById("status").innerText += `❌ Failed to send to ${rec}: ${err.message}\n`;
           }
         }
+        document.getElementById("status").innerText += "\nAll done!";
       } catch (err) {
-        document.getElementById("status").innerText += `\\n❌ Error: ${err.message}`;
+        document.getElementById("status").innerText += `\nError: ${err.message}`;
       }
     };
   </script>
