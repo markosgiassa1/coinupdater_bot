@@ -61,7 +61,7 @@ HTML_TEMPLATE = """
 <body>
   <h1>🔗 SPL Token Distributor</h1>
 
-  <button id="connectBtn">Connect Wallet</button>
+  <button id="connectBtn">🔗 Connect Wallet</button>
   <p id="walletInfo">Wallet not connected.</p>
 
   <label for="walletList">Enter Wallet Addresses (one per line):</label>
@@ -91,19 +91,34 @@ HTML_TEMPLATE = """
     let provider = null;
     let publicKey = null;
 
-    // Connect Wallet - supports Phantom, Solflare, and any injected solana wallet
+    // Connect Wallet - improved detection and logic inspired by your first code
     document.getElementById("connectBtn").onclick = async () => {
-      if (window.solana) {
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const isDesktop = !isIOS && !/Android/.test(navigator.userAgent);
+
+      if (window.solana?.isPhantom) {
         provider = window.solana;
-        try {
-          const resp = await provider.connect();
-          publicKey = resp.publicKey;
-          document.getElementById("walletInfo").innerText = "Connected wallet: " + publicKey.toString();
-        } catch (err) {
-          document.getElementById("walletInfo").innerText = "Connection failed or rejected.";
-        }
+      } else if (window.solflare?.isSolflare) {
+        provider = window.solflare;
       } else {
-        alert("Please install a Solana wallet extension like Phantom or Solflare.");
+        if (isIOS) {
+          document.getElementById("walletInfo").innerText = "📱 Please open this site inside the Phantom or Solflare mobile app browser.";
+        } else if (isDesktop) {
+          document.getElementById("walletInfo").innerText = "💻 Please install the Phantom or Solflare browser extension and refresh this page.";
+        } else {
+          document.getElementById("walletInfo").innerText = "⚠️ No wallet detected. Use Phantom or Solflare.";
+        }
+        return;
+      }
+
+      try {
+        document.getElementById("walletInfo").innerText = "🔄 Waiting for wallet approval...";
+        const response = await provider.connect();
+        publicKey = response.publicKey || provider.publicKey;
+        document.getElementById("walletInfo").innerText = "✅ Connected wallet: " + publicKey.toString();
+      } catch (err) {
+        console.error("Connection failed:", err);
+        document.getElementById("walletInfo").innerText = "❌ Wallet connection failed.";
       }
     };
 
@@ -188,14 +203,14 @@ HTML_TEMPLATE = """
             const sig = await connection.sendRawTransaction(signedTx.serialize());
             await connection.confirmTransaction(sig);
 
-            document.getElementById("status").innerText += `✅ Sent to ${rec} | TX: ${sig}\n`;
-          } catch (err) {
-            document.getElementById("status").innerText += `❌ Failed to send to ${rec}: ${err.message}\n`;
+            document.getElementById("status").innerText += `✅ Sent to ${rec} (tx: ${sig})\n`;
+          } catch (e) {
+            document.getElementById("status").innerText += `❌ Failed for ${rec}: ${e.message}\n`;
           }
         }
-        document.getElementById("status").innerText += "\nAll done!";
-      } catch (err) {
-        document.getElementById("status").innerText += `\nError: ${err.message}`;
+        document.getElementById("status").innerText += "🎉 Distribution completed.";
+      } catch (e) {
+        document.getElementById("status").innerText += "\n❌ Error: " + e.message;
       }
     };
   </script>
@@ -203,9 +218,9 @@ HTML_TEMPLATE = """
 </html>
 """
 
-@app.route('/')
+@app.route("/")
 def index():
     return render_template_string(HTML_TEMPLATE)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
