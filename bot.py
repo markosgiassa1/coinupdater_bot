@@ -29,6 +29,8 @@ HTML_TEMPLATE = """
       padding: 10px;
       border-radius: 5px;
       border: none;
+      background-color: #222;
+      color: white;
     }
     textarea {
       resize: vertical;
@@ -64,6 +66,7 @@ HTML_TEMPLATE = """
   <button id="connectBtn">🔗 Connect Wallet</button>
   <p id="walletInfo">Wallet not connected.</p>
 
+  <!-- Token distributor UI elements -->
   <label for="walletList">Enter Wallet Addresses (one per line):</label>
   <textarea id="walletList" rows="6" placeholder="Recipient wallet addresses..."></textarea>
 
@@ -87,144 +90,149 @@ HTML_TEMPLATE = """
 
   <div id="status">Status updates will appear here...</div>
 
-  <script>
-    let provider = null;
-    let publicKey = null;
+<script>
+  let provider = null;
+  let publicKey = null;
 
-    function getProvider() {
-      if (window.solana?.isPhantom) return window.solana;
-      if (window.solflare?.isSolflare) return window.solflare;
-      return null;
+  // Function to detect wallet provider (Phantom or Solflare)
+  function detectProvider() {
+    if (window.solana && window.solana.isPhantom) {
+      return window.solana;
+    } else if (window.solflare && window.solflare.isSolflare) {
+      return window.solflare;
+    } else if (window.solana && window.solana.isSolflare) {
+      // Some versions use window.solana for Solflare
+      return window.solana;
+    }
+    return null;
+  }
+
+  document.getElementById("connectBtn").onclick = async () => {
+    provider = detectProvider();
+
+    if (!provider) {
+      const ua = navigator.userAgent.toLowerCase();
+      if (/iphone|ipad|ipod|android/.test(ua)) {
+        document.getElementById("walletInfo").innerText =
+          "📱 No Phantom or Solflare wallet detected. Open in Phantom/Solflare mobile app browser.";
+      } else {
+        document.getElementById("walletInfo").innerText =
+          "💻 No Phantom or Solflare wallet detected. Please install Phantom or Solflare extension.";
+      }
+      return;
     }
 
-    document.getElementById("connectBtn").onclick = async () => {
-      provider = getProvider();
+    try {
+      document.getElementById("walletInfo").innerText = "🔄 Waiting for wallet approval...";
+      const resp = await provider.connect();
+      publicKey = resp.publicKey.toString();
+      document.getElementById("walletInfo").innerText = "✅ Connected wallet: " + publicKey;
 
-      if (!provider) {
-        document.getElementById("walletInfo").innerText = "⚠️ No wallet detected. Please install Phantom or Solflare.";
-        return;
+      // Listen for disconnect event to update UI
+      provider.on("disconnect", () => {
+        publicKey = null;
+        document.getElementById("walletInfo").innerText = "Wallet disconnected.";
+      });
+    } catch (err) {
+      if (err.code === 4001) {
+        document.getElementById("walletInfo").innerText = "❌ Connection request rejected.";
+      } else {
+        document.getElementById("walletInfo").innerText = "❌ Connection failed: " + err.message;
       }
+    }
+  };
 
-      try {
-        if (provider.isConnected) {
-          publicKey = provider.publicKey;
-          document.getElementById("walletInfo").innerText = "✅ Wallet already connected: " + publicKey.toString();
-          return;
+  // Estimate fee based on recipient count
+  document.getElementById("estimateBtn").onclick = async () => {
+    const recipients = document.getElementById("walletList").value.trim().split("\\n").filter(x => x);
+    const network = document.getElementById("network").value;
+    const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl(network), "confirmed");
+
+    try {
+      const { feeCalculator } = await connection.getRecentBlockhash();
+      const fee = feeCalculator.lamportsPerSignature * (recipients.length + 1);
+      document.getElementById("status").innerText = "Estimated fee: " + (fee / solanaWeb3.LAMPORTS_PER_SOL).toFixed(6) + " SOL";
+    } catch (e) {
+      document.getElementById("status").innerText = "Error estimating fee: " + e.message;
+    }
+  };
+
+  // Send tokens to each recipient sequentially
+  document.getElementById("submitBtn").onclick = async () => {
+    if (!provider || !publicKey) {
+      alert("Please connect your wallet first.");
+      return;
+    }
+
+    const recipients = document.getElementById("walletList").value.trim().split("\\n").filter(x => x);
+    const mintAddress = document.getElementById("mintAddress").value.trim();
+    const decimalsInput = document.getElementById("decimals").value.trim();
+    const amountInput = document.getElementById("amount").value.trim();
+    const network = document.getElementById("network").value;
+
+    if (!mintAddress || !amountInput || !decimalsInput || recipients.length === 0) {
+      alert("Please fill out all fields including decimals.");
+      return;
+    }
+
+    const decimals = parseInt(decimalsInput);
+    if (isNaN(decimals) || decimals < 0 || decimals > 18) {
+      alert("Please enter valid token decimals between 0 and 18.");
+      return;
+    }
+
+    const amount = parseFloat(amountInput);
+    if (isNaN(amount) || amount <= 0) {
+      alert("Please enter a valid amount greater than zero.");
+      return;
+    }
+
+    const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl(network), "confirmed");
+    const splToken = window.splToken;
+
+    document.getElementById("status").innerText = "Starting token distribution...\n";
+
+    try {
+      const mint = new solanaWeb3.PublicKey(mintAddress);
+      // Get or create sender's associated token account
+      const fromTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(connection, provider, mint, publicKey);
+
+      for (let rec of recipients) {
+        try {
+          const toPubkey = new solanaWeb3.PublicKey(rec);
+          // Get or create recipient's associated token account
+          const toTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(connection, provider, mint, toPubkey);
+
+          const tx = new solanaWeb3.Transaction().add(
+            splToken.createTransferInstruction(
+              fromTokenAccount.address,
+              toTokenAccount.address,
+              publicKey,
+              BigInt(amount * (10 ** decimals)),
+              [],
+              splToken.TOKEN_PROGRAM_ID
+            )
+          );
+
+          tx.feePayer = publicKey;
+          const { blockhash } = await connection.getLatestBlockhash();
+          tx.recentBlockhash = blockhash;
+
+          const signedTx = await provider.signTransaction(tx);
+          const sig = await connection.sendRawTransaction(signedTx.serialize());
+          await connection.confirmTransaction(sig);
+
+          document.getElementById("status").innerText += `✅ Sent to ${rec} (tx: ${sig})\n`;
+        } catch (e) {
+          document.getElementById("status").innerText += `❌ Failed for ${rec}: ${e.message}\n`;
         }
-
-        document.getElementById("walletInfo").innerText = "🔄 Waiting for wallet approval...";
-
-        const res = await provider.connect();
-
-        publicKey = res.publicKey || provider.publicKey;
-
-        if (publicKey) {
-          document.getElementById("walletInfo").innerText = "✅ Connected wallet: " + publicKey.toString();
-        } else {
-          document.getElementById("walletInfo").innerText = "❌ Connection failed: No public key received.";
-        }
-
-        provider.on("disconnect", () => {
-          publicKey = null;
-          document.getElementById("walletInfo").innerText = "Wallet disconnected.";
-        });
-      } catch (err) {
-        console.error("Wallet connection error:", err);
-        if (err.code === 4001) {
-          document.getElementById("walletInfo").innerText = "❌ Connection request rejected by user.";
-        } else {
-          document.getElementById("walletInfo").innerText = "❌ Wallet connection failed: " + (err.message || err.toString());
-        }
       }
-    };
-
-    document.getElementById("estimateBtn").onclick = async () => {
-      const recipients = document.getElementById("walletList").value.trim().split("\\n").filter(x => x);
-      const network = document.getElementById("network").value;
-      const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl(network), "confirmed");
-
-      try {
-        const { feeCalculator } = await connection.getRecentBlockhash();
-        const fee = feeCalculator.lamportsPerSignature * (recipients.length + 1);
-        document.getElementById("status").innerText = "Estimated fee: " + (fee / solanaWeb3.LAMPORTS_PER_SOL).toFixed(6) + " SOL";
-      } catch (e) {
-        document.getElementById("status").innerText = "Error estimating fee: " + e.message;
-      }
-    };
-
-    document.getElementById("submitBtn").onclick = async () => {
-      const recipients = document.getElementById("walletList").value.trim().split("\\n").filter(x => x);
-      const mintAddress = document.getElementById("mintAddress").value.trim();
-      const decimalsInput = document.getElementById("decimals").value.trim();
-      const amountInput = document.getElementById("amount").value.trim();
-      const network = document.getElementById("network").value;
-
-      if (!provider || !publicKey) {
-        alert("Please connect your wallet first.");
-        return;
-      }
-
-      if (!mintAddress || !amountInput || !decimalsInput || recipients.length === 0) {
-        alert("Please fill out all fields including decimals.");
-        return;
-      }
-
-      const decimals = parseInt(decimalsInput);
-      if (isNaN(decimals) || decimals < 0 || decimals > 18) {
-        alert("Please enter valid token decimals between 0 and 18.");
-        return;
-      }
-
-      const amount = parseFloat(amountInput);
-      if (isNaN(amount) || amount <= 0) {
-        alert("Please enter a valid amount greater than zero.");
-        return;
-      }
-
-      const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl(network), "confirmed");
-      const splToken = window.splToken;
-
-      document.getElementById("status").innerText = "Starting token distribution...\n";
-
-      try {
-        const mint = new solanaWeb3.PublicKey(mintAddress);
-        const fromTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(connection, provider, mint, publicKey);
-
-        for (let rec of recipients) {
-          try {
-            const toPubkey = new solanaWeb3.PublicKey(rec);
-            const toTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(connection, provider, mint, toPubkey);
-
-            const tx = new solanaWeb3.Transaction().add(
-              splToken.createTransferInstruction(
-                fromTokenAccount.address,
-                toTokenAccount.address,
-                publicKey,
-                BigInt(amount * (10 ** decimals)),
-                [],
-                splToken.TOKEN_PROGRAM_ID
-              )
-            );
-
-            tx.feePayer = publicKey;
-            const { blockhash } = await connection.getLatestBlockhash();
-            tx.recentBlockhash = blockhash;
-
-            const signedTx = await provider.signTransaction(tx);
-            const sig = await connection.sendRawTransaction(signedTx.serialize());
-            await connection.confirmTransaction(sig);
-
-            document.getElementById("status").innerText += `✅ Sent to ${rec} (tx: ${sig})\n`;
-          } catch (e) {
-            document.getElementById("status").innerText += `❌ Failed for ${rec}: ${e.message}\n`;
-          }
-        }
-        document.getElementById("status").innerText += "🎉 Distribution completed.";
-      } catch (e) {
-        document.getElementById("status").innerText += "\\n❌ Error: " + e.message;
-      }
-    };
-  </script>
+      document.getElementById("status").innerText += "🎉 Distribution completed.";
+    } catch (e) {
+      document.getElementById("status").innerText += "\n❌ Error: " + e.message;
+    }
+  };
+</script>
 </body>
 </html>
 """
