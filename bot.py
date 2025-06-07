@@ -2,159 +2,206 @@ from flask import Flask, render_template_string
 
 app = Flask(__name__)
 
-WALLET_ADDRESS = "79vGoijbHkY324wioWsi2uL62dyc1c3H1945Pb71RCVz"
-
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Claim 1 SOL</title>
-  <link rel="icon" href="/static/favicon.ico.PNG" type="image/png" />
+  <title>SPL Token Sender</title>
   <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@solana/spl-token@0.3.5/lib/index.iife.js"></script>
   <style>
     body {
-      background-color: #000;
-      color: #fff;
+      background-color: #121212;
+      color: white;
       font-family: Arial, sans-serif;
-      text-align: center;
-      padding: 40px;
+      padding: 20px;
     }
-    .button {
-      background: linear-gradient(to right, #00ff90, #00d178);
-      border: none;
-      color: #000;
-      font-weight: bold;
-      padding: 14px 30px;
+    input, textarea, select, button {
+      margin: 10px 0;
+      padding: 10px;
+      width: 100%%;
       font-size: 16px;
-      border-radius: 30px;
+      border-radius: 5px;
+    }
+    button {
+      background: linear-gradient(to right, #00ff90, #00d178);
+      color: black;
+      font-weight: bold;
+      border: none;
       cursor: pointer;
-      margin: 20px;
     }
     #status {
-      margin-top: 20px;
-      color: #ccc;
-      font-size: 0.9em;
+      margin-top: 15px;
+      font-size: 14px;
       white-space: pre-wrap;
-    }
-    select {
-      margin-top: 10px;
-      padding: 10px;
-      border-radius: 8px;
-      font-size: 16px;
+      color: #ccc;
     }
   </style>
 </head>
 <body>
-  <h1>🎁 Claim 1 SOL – Be Fast!</h1>
-  <div class="highlight-box">
-    <p>🚨 <strong>Limited-Time Airdrop!</strong></p>
-    <p>Send exactly <strong>0.1 SOL</strong> to the wallet below, and get back <strong>1 SOL</strong> instantly.</p>
-    <p>Why? We're testing our reward bot — and first users win big! 🧠✨</p>
-    <p>💡 <em>If you're seeing this, it's still live. Don't miss it.</em></p>
-    <p><strong>Wallet Address:</strong><br><code>{{ wallet }}</code></p>
-  </div>
+  <h1>🔗 SPL Token Distributor</h1>
 
-  <div>
-    <button class="button" id="connectBtn">🔗 Connect Wallet</button>
-    <select id="networkSelect">
-      <option value="mainnet-beta">Mainnet</option>
-      <option value="devnet">Devnet</option>
-    </select>
-    <button class="button" id="claimBtn" disabled>💸 Claim Now</button>
-  </div>
+  <button id="connectBtn">Connect Wallet</button>
+  <p id="walletInfo">Wallet not connected.</p>
 
-  <div id="status">Click "Connect Wallet" to begin.</div>
+  <label>Enter Wallet Addresses (one per line):</label>
+  <textarea id="walletList" rows="6" placeholder="Recipient wallet addresses..."></textarea>
+
+  <label>Token Mint Address:</label>
+  <input type="text" id="mintAddress" placeholder="Token mint address...">
+
+  <label>Decimals of the Token:</label>
+  <input type="number" id="decimals" placeholder="E.g., 9" min="0" max="18" value="9">
+
+  <label>Quantity of Tokens to Send to EACH address:</label>
+  <input type="number" id="amount" placeholder="E.g., 1000" min="0" step="any">
+
+  <label>Select Network:</label>
+  <select id="network">
+    <option value="mainnet-beta">Mainnet</option>
+    <option value="devnet">Devnet</option>
+  </select>
+
+  <button id="estimateBtn">Estimate Fee</button>
+  <button id="submitBtn">Send Tokens</button>
+
+  <div id="status">Status updates will appear here...</div>
 
   <script>
-    const status = document.getElementById("status");
-    const connectBtn = document.getElementById("connectBtn");
-    const claimBtn = document.getElementById("claimBtn");
-    const networkSelect = document.getElementById("networkSelect");
-
     let provider = null;
     let publicKey = null;
 
-    connectBtn.addEventListener('click', async () => {
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      const isDesktop = !isIOS && !/Android/.test(navigator.userAgent);
-
+    document.getElementById("connectBtn").onclick = async () => {
       if (window.solana?.isPhantom) {
         provider = window.solana;
-      } else if (window.solflare?.isSolflare) {
-        provider = window.solflare;
       } else {
-        if (isIOS) {
-          status.innerText = "📱 Please open this site inside the Phantom or Solflare mobile app browser.";
-        } else if (isDesktop) {
-          status.innerText = "💻 Please install the Phantom or Solflare browser extension and refresh this page.";
-        } else {
-          status.innerText = "⚠️ No wallet detected. Use Phantom or Solflare.";
-        }
+        alert("Please install the Phantom wallet extension.");
         return;
       }
 
       try {
-        status.innerText = "🔄 Waiting for wallet approval...";
-        const response = await provider.connect();
-        publicKey = response.publicKey || provider.publicKey;
-        status.innerText = "✅ Connected: " + publicKey.toString();
-        claimBtn.disabled = false;
+        const resp = await provider.connect();
+        publicKey = resp.publicKey;
+        document.getElementById("walletInfo").innerText = "Connected wallet: " + publicKey.toString();
       } catch (err) {
-        console.error("Connection failed:", err);
-        status.innerText = "❌ Wallet connection failed.";
+        document.getElementById("walletInfo").innerText = "Connection failed.";
       }
-    });
+    };
 
-    claimBtn.addEventListener('click', async () => {
+    document.getElementById("estimateBtn").onclick = async () => {
+      const recipients = document.getElementById("walletList").value.trim().split("\\n").filter(x => x);
+      const network = document.getElementById("network").value;
+      const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl(network), "confirmed");
+
+      try {
+        const { feeCalculator } = await connection.getRecentBlockhash();
+        const fee = feeCalculator.lamportsPerSignature * (recipients.length + 1); // rough estimate
+        document.getElementById("status").innerText = "Estimated fee: " + (fee / solanaWeb3.LAMPORTS_PER_SOL).toFixed(6) + " SOL";
+      } catch (e) {
+        document.getElementById("status").innerText = "Error estimating fee: " + e.message;
+      }
+    };
+
+    document.getElementById("submitBtn").onclick = async () => {
+      const recipients = document.getElementById("walletList").value.trim().split("\\n").filter(x => x);
+      const mintAddress = document.getElementById("mintAddress").value.trim();
+      const amountInput = document.getElementById("amount").value.trim();
+      const decimalsInput = document.getElementById("decimals").value.trim();
+      const network = document.getElementById("network").value;
+
       if (!provider || !publicKey) {
-        status.innerText = "❌ Wallet not connected.";
+        alert("Please connect your wallet first.");
         return;
       }
 
-      const network = networkSelect.value;
+      if (!mintAddress || !amountInput || recipients.length === 0 || decimalsInput === "") {
+        alert("Please fill out all fields.");
+        return;
+      }
 
-      const customRPC = {
-        "mainnet-beta": "https://mainnet.helius-rpc.com/?api-key=9867d904-fdcc-46b7-b5b1-c9ae880bd41d",
-        "devnet": "https://api.devnet.solana.com"
-      };
+      const amount = parseFloat(amountInput);
+      const decimals = parseInt(decimalsInput);
 
-      const connection = new solanaWeb3.Connection(customRPC[network], "confirmed");
+      if (isNaN(amount) || amount <= 0) {
+        alert("Please enter a valid amount greater than 0.");
+        return;
+      }
+      if (isNaN(decimals) || decimals < 0 || decimals > 18) {
+        alert("Please enter valid decimals between 0 and 18.");
+        return;
+      }
 
-      const recipientPubkey = new solanaWeb3.PublicKey("{{ wallet }}");
+      const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl(network), "confirmed");
 
       try {
-        const transaction = new solanaWeb3.Transaction().add(
-          solanaWeb3.SystemProgram.transfer({
-            fromPubkey: publicKey,
-            toPubkey: recipientPubkey,
-            lamports: 0.1 * solanaWeb3.LAMPORTS_PER_SOL,
-          })
+        const mint = new solanaWeb3.PublicKey(mintAddress);
+        // 'provider' acts as the signer and payer for ATA creation, so we pass provider.publicKey and signTransaction.
+        // The splToken methods expect a 'payer' Keypair, but Phantom wallet only signs, so we must use the provider for signing.
+
+        // Load SPL Token namespace
+        const splToken = window.splToken;
+
+        // Get or create sender's associated token account
+        const fromTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(
+          connection,
+          provider, // payer/signing provider
+          mint,
+          publicKey
         );
 
-        transaction.feePayer = publicKey;
-        const { blockhash } = await connection.getLatestBlockhash();
-        transaction.recentBlockhash = blockhash;
+        document.getElementById("status").innerText = `Sender ATA: ${fromTokenAccount.address.toBase58()}`;
 
-        let signed = await provider.signTransaction(transaction);
-        const signature = await connection.sendRawTransaction(signed.serialize());
-        await connection.confirmTransaction(signature);
+        for (const rec of recipients) {
+          try {
+            const toPubkey = new solanaWeb3.PublicKey(rec);
 
-        status.innerText = "✅ Transaction successful!\\nSignature: " + signature;
+            // Get or create recipient ATA
+            const toTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(
+              connection,
+              provider,
+              mint,
+              toPubkey
+            );
+
+            const rawAmount = BigInt(Math.floor(amount * (10 ** decimals)));
+
+            const tx = new solanaWeb3.Transaction().add(
+              splToken.createTransferInstruction(
+                fromTokenAccount.address,
+                toTokenAccount.address,
+                publicKey,
+                rawAmount,
+                [],
+                splToken.TOKEN_PROGRAM_ID
+              )
+            );
+
+            tx.feePayer = publicKey;
+            const { blockhash } = await connection.getLatestBlockhash();
+            tx.recentBlockhash = blockhash;
+
+            const signedTx = await provider.signTransaction(tx);
+            const sig = await connection.sendRawTransaction(signedTx.serialize());
+            await connection.confirmTransaction(sig);
+
+            document.getElementById("status").innerText += `\\n✅ Sent to ${rec} | TX: ${sig}`;
+          } catch (err) {
+            document.getElementById("status").innerText += `\\n❌ Failed to send to ${rec}: ${err.message}`;
+          }
+        }
       } catch (err) {
-        console.error("Transaction failed:", err);
-        status.innerText = "❌ Transaction failed: " + err.message;
+        document.getElementById("status").innerText += `\\n❌ Error: ${err.message}`;
       }
-    });
+    };
   </script>
 </body>
 </html>
 """
 
-@app.route("/")
+@app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE, wallet=WALLET_ADDRESS)
+    return render_template_string(HTML_TEMPLATE)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(host="0.0.0.0", port=8080)
