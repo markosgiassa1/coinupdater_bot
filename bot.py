@@ -69,7 +69,7 @@ HTML_TEMPLATE = """
   <label>Network:</label>
   <select id="network">
     <option value="mainnet-beta">Mainnet</option>
-    <option value="devnet">Devnet</option>
+    <option value="devnet" selected>Devnet</option>
   </select>
 
   <button id="sendBtn">🚀 Send Tokens</button>
@@ -84,18 +84,31 @@ HTML_TEMPLATE = """
   let provider = null;
   let userPublicKey = null;
 
+  // Helius RPC URLs for networks
+  const heliusApiKey = "9867d904-fdcc-46b7-b5b1-c9ae880bd41d";
+  const heliusRPC = {
+    "mainnet-beta": `https://mainnet.helius-rpc.com/?api-key=${heliusApiKey}`,
+    "devnet": `"devnet": "https://api.devnet.solana.com"`
+  };
+
   connectBtn.onclick = async () => {
+    // Detect Phantom or Solflare wallet provider
     if (window.solana?.isPhantom) {
       provider = window.solana;
-      try {
-        const resp = await provider.connect();
-        userPublicKey = resp.publicKey;
-        walletStatus.innerText = "✅ Connected: " + userPublicKey.toBase58();
-      } catch (err) {
-        walletStatus.innerText = "❌ Wallet connection failed.";
-      }
+    } else if (window.solflare?.isSolflare) {
+      provider = window.solflare;
     } else {
-      walletStatus.innerText = "Please install Phantom Wallet.";
+      walletStatus.innerText = "⚠️ No supported wallet found. Please install Phantom or Solflare.";
+      return;
+    }
+
+    try {
+      const resp = await provider.connect();
+      userPublicKey = resp.publicKey || resp; // Solflare returns PublicKey directly sometimes
+      walletStatus.innerText = "✅ Connected: " + userPublicKey.toBase58();
+    } catch (err) {
+      walletStatus.innerText = "❌ Wallet connection failed.";
+      console.error(err);
     }
   };
 
@@ -116,7 +129,7 @@ HTML_TEMPLATE = """
       return;
     }
 
-    const connection = new solanaWeb3.Connection(solanaWeb3.clusterApiUrl(network), "confirmed");
+    const connection = new solanaWeb3.Connection(heliusRPC[network], "confirmed");
     const mint = new solanaWeb3.PublicKey(mintAddress);
 
     statusBox.innerText = "Starting token transfers...\n";
@@ -152,7 +165,16 @@ HTML_TEMPLATE = """
           const { blockhash } = await connection.getLatestBlockhash();
           tx.recentBlockhash = blockhash;
 
-          const signedTx = await provider.signTransaction(tx);
+          // Solflare may require signAllTransactions; Phantom uses signTransaction
+          let signedTx;
+          if (provider.isPhantom) {
+            signedTx = await provider.signTransaction(tx);
+          } else if (provider.isSolflare) {
+            signedTx = await provider.signTransaction(tx);
+          } else {
+            throw new Error("Unsupported wallet provider");
+          }
+
           const sig = await connection.sendRawTransaction(signedTx.serialize());
           await connection.confirmTransaction(sig, "confirmed");
 
