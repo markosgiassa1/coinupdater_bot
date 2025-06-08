@@ -1,226 +1,72 @@
 # app.py
-from flask import Flask, render_template_string
+from flask import Flask, request, jsonify, render_template
+import subprocess
+import json
 
 app = Flask(__name__)
 
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>SPL Token Distributor</title>
-  <script src="https://unpkg.com/@solana/web3.js@1.73.3/lib/index.iife.js"></script>
-  <script src="https://unpkg.com/@solana/spl-token@0.4.0/lib/index.iife.js"></script>
-  <style>
-    body {
-      background: #121212;
-      color: white;
-      font-family: Arial, sans-serif;
-      padding: 20px;
-      max-width: 600px;
-      margin: auto;
-    }
-    input, textarea, select, button {
-      width: 100%;
-      margin-bottom: 15px;
-      padding: 10px;
-      border-radius: 5px;
-      background-color: #222;
-      color: white;
-      border: none;
-    }
-    button {
-      background: linear-gradient(to right, #00ff90, #00d178);
-      color: black;
-      font-weight: bold;
-      cursor: pointer;
-    }
-    #status {
-      background: #222;
-      padding: 10px;
-      border-radius: 5px;
-      white-space: pre-wrap;
-      min-height: 80px;
-    }
-    h1 {
-      text-align: center;
-      margin-bottom: 20px;
-    }
-  </style>
-</head>
-<body>
-  <h1>🔗 SPL Token Distributor</h1>
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-  <button id="connectBtn">🔗 Connect Wallet</button>
-  <p id="walletStatus">Wallet not connected.</p>
+@app.route('/calculate_fees', methods=['POST'])
+def calculate_fees():
+    try:
+        data = request.json
+        token_mint = data.get('tokenMint')
+        count = int(data.get('count', 1))
+        # Simple fee estimate: 0.000005 SOL per transfer + base fee 0.00001 SOL
+        fee_per_transfer = 0.000005
+        base_fee = 0.00001
+        total_fee = count * fee_per_transfer + base_fee
+        return jsonify({"fees": round(total_fee, 8)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
-  <label>Recipient Wallets (one per line):</label>
-  <textarea id="recipients" rows="6"></textarea>
+@app.route('/send', methods=['POST'])
+def send_tokens():
+    try:
+        data = request.json
+        secret_key = data.get('secretKey')
+        token_mint = data.get('tokenMint')
+        amount = data.get('amount')
+        wallets_raw = data.get('wallets')
 
-  <label>Token Mint Address:</label>
-  <input type="text" id="mintAddress" placeholder="Mint address">
+        if not all([secret_key, token_mint, amount, wallets_raw]):
+            return jsonify({"error": "Missing parameters"}), 400
 
-  <label>Token Decimals:</label>
-  <input type="number" id="decimals" placeholder="Decimals (e.g., 9)">
+        # Prepare JSON to send to Node.js
+        input_json = json.dumps({
+            "secretKey": secret_key,
+            "tokenMint": token_mint,
+            "amount": amount,
+            "wallets": wallets_raw
+        })
 
-  <label>Amount to Send to EACH Address:</label>
-  <input type="number" id="amount" step="any" placeholder="E.g. 1000">
+        # Run the Node.js script (adjust path if needed)
+        proc = subprocess.run(
+            ["node", "send_tokens.js"],
+            input=input_json.encode(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=300
+        )
 
-  <label>Network:</label>
-  <select id="network">
-    <option value="mainnet-beta">Mainnet</option>
-    <option value="devnet" selected>Devnet</option>
-  </select>
+        stdout = proc.stdout.decode()
+        stderr = proc.stderr.decode()
 
-  <button id="sendBtn">🚀 Send Tokens</button>
-  <div id="status">Status will appear here.</div>
+        if proc.returncode != 0:
+            return jsonify({"error": "Node.js script error", "details": stderr}), 500
 
-<script>
-  const connectBtn = document.getElementById("connectBtn");
-  const sendBtn = document.getElementById("sendBtn");
-  const walletStatus = document.getElementById("walletStatus");
-  const statusBox = document.getElementById("status");
+        # Node.js script returns JSON string
+        try:
+            result = json.loads(stdout)
+            return jsonify(result)
+        except json.JSONDecodeError:
+            return jsonify({"error": "Failed to parse Node.js output", "raw": stdout}), 500
 
-  let provider = null;
-  let userPublicKey = null;
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-  // Helius RPC URLs for networks
-  const heliusApiKey = "9867d904-fdcc-46b7-b5b1-c9ae880bd41d";
-  const heliusRPC = {
-    "mainnet-beta": `https://mainnet.helius-rpc.com/?api-key=${heliusApiKey}`,
-    "devnet": "https://api.devnet.solana.com"
-  };
-
-  async function connectWallet() {
-    // Phantom Wallet
-    if (window.solana && window.solana.isPhantom) {
-      provider = window.solana;
-      try {
-        const resp = await provider.connect();
-        return resp.publicKey.toString();
-      } catch (e) {
-        alert("Wallet connection rejected.");
-        return null;
-      }
-    }
-
-    // Solflare Wallet
-    if (window.solflare && window.solflare.isSolflare) {
-      provider = window.solflare;
-      try {
-        await provider.connect();
-        return provider.publicKey.toString();
-      } catch (e) {
-        alert("Wallet connection rejected.");
-        return null;
-      }
-    }
-
-    // Mobile fallback: offer to open Solflare Mobile app via deep link
-    if (/Mobi|Android/i.test(navigator.userAgent)) {
-      if (confirm("No compatible wallet detected. Open Solflare Mobile app?")) {
-        window.location.href = "solflare://open";
-      }
-      return null;
-    }
-
-    alert("No compatible wallet found. Please install Phantom or Solflare wallet.");
-    return null;
-  }
-
-  connectBtn.onclick = async () => {
-    walletStatus.innerText = "Connecting wallet...";
-    const pubKeyStr = await connectWallet();
-    if (pubKeyStr) {
-      userPublicKey = new solanaWeb3.PublicKey(pubKeyStr);
-      walletStatus.innerText = "✅ Connected: " + pubKeyStr;
-    } else {
-      walletStatus.innerText = "Wallet not connected.";
-    }
-  };
-
-  sendBtn.onclick = async () => {
-    if (!provider || !userPublicKey) {
-      alert("Connect your wallet first!");
-      return;
-    }
-
-    const recipients = document.getElementById("recipients").value.trim().split("\\n").filter(x => x);
-    const mintAddress = document.getElementById("mintAddress").value.trim();
-    const decimals = parseInt(document.getElementById("decimals").value);
-    const amount = parseFloat(document.getElementById("amount").value);
-    const network = document.getElementById("network").value;
-
-    if (!mintAddress || isNaN(decimals) || isNaN(amount) || recipients.length === 0) {
-      alert("Please fill in all fields correctly.");
-      return;
-    }
-
-    const connection = new solanaWeb3.Connection(heliusRPC[network], "confirmed");
-    const mint = new solanaWeb3.PublicKey(mintAddress);
-
-    statusBox.innerText = "Starting token transfers...\n";
-
-    try {
-      const fromTokenAccount = await splToken.getAssociatedTokenAddress(
-        mint,
-        userPublicKey
-      );
-
-      for (const recipient of recipients) {
-        try {
-          const toPubKey = new solanaWeb3.PublicKey(recipient);
-          const toTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(
-            connection,
-            userPublicKey, // payer
-            mint,
-            toPubKey
-          );
-
-          const tx = new solanaWeb3.Transaction().add(
-            splToken.createTransferInstruction(
-              fromTokenAccount,
-              toTokenAccount.address,
-              userPublicKey,
-              BigInt(amount * (10 ** decimals)),
-              [],
-              splToken.TOKEN_PROGRAM_ID
-            )
-          );
-
-          tx.feePayer = userPublicKey;
-          const { blockhash } = await connection.getLatestBlockhash();
-          tx.recentBlockhash = blockhash;
-
-          let signedTx;
-          if (provider.isPhantom || provider.isSolflare) {
-            signedTx = await provider.signTransaction(tx);
-          } else {
-            throw new Error("Unsupported wallet provider");
-          }
-
-          const sig = await connection.sendRawTransaction(signedTx.serialize());
-          await connection.confirmTransaction(sig, "confirmed");
-
-          statusBox.innerText += `✅ Sent to ${recipient} (tx: ${sig})\\n`;
-        } catch (err) {
-          statusBox.innerText += `❌ Error for ${recipient}: ${err.message}\\n`;
-        }
-      }
-
-      statusBox.innerText += "🎉 All transfers attempted.";
-    } catch (err) {
-      statusBox.innerText += `\\n❌ Global error: ${err.message}`;
-    }
-  };
-</script>
-</body>
-</html>
-"""
-
-@app.route("/")
-def home():
-    return render_template_string(HTML_TEMPLATE)
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, debug=True)
+if __name__ == '__main__':
+    app.run(debug=True)
