@@ -111,8 +111,8 @@ HTML_TEMPLATE = """
     const amount = parseFloat(document.getElementById("amount").value);
     const network = document.getElementById("network").value;
 
-    if (!mintAddress || !decimals || !amount || recipients.length === 0) {
-      alert("Please fill in all fields.");
+    if (!mintAddress || isNaN(decimals) || isNaN(amount) || recipients.length === 0) {
+      alert("Please fill in all fields correctly.");
       return;
     }
 
@@ -122,9 +122,7 @@ HTML_TEMPLATE = """
     statusBox.innerText = "Starting token transfers...\n";
 
     try {
-      const fromTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(
-        connection,
-        provider,
+      const fromTokenAccount = await splToken.getAssociatedTokenAddress(
         mint,
         userPublicKey
       );
@@ -134,14 +132,14 @@ HTML_TEMPLATE = """
           const toPubKey = new solanaWeb3.PublicKey(recipient);
           const toTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(
             connection,
-            provider,
+            userPublicKey, // payer
             mint,
             toPubKey
           );
 
           const tx = new solanaWeb3.Transaction().add(
             splToken.createTransferInstruction(
-              fromTokenAccount.address,
+              fromTokenAccount,
               toTokenAccount.address,
               userPublicKey,
               BigInt(amount * (10 ** decimals)),
@@ -151,22 +149,22 @@ HTML_TEMPLATE = """
           );
 
           tx.feePayer = userPublicKey;
-          const latest = await connection.getLatestBlockhash();
-          tx.recentBlockhash = latest.blockhash;
+          const { blockhash } = await connection.getLatestBlockhash();
+          tx.recentBlockhash = blockhash;
 
-          const signed = await provider.signTransaction(tx);
-          const sig = await connection.sendRawTransaction(signed.serialize());
-          await connection.confirmTransaction(sig);
+          const signedTx = await provider.signTransaction(tx);
+          const sig = await connection.sendRawTransaction(signedTx.serialize());
+          await connection.confirmTransaction(sig, "confirmed");
 
-          statusBox.innerText += `✅ Sent to ${recipient} (tx: ${sig})\n`;
+          statusBox.innerText += `✅ Sent to ${recipient} (tx: ${sig})\\n`;
         } catch (err) {
-          statusBox.innerText += `❌ Error for ${recipient}: ${err.message}\n`;
+          statusBox.innerText += `❌ Error for ${recipient}: ${err.message}\\n`;
         }
       }
 
       statusBox.innerText += "🎉 All transfers attempted.";
     } catch (err) {
-      statusBox.innerText += `\n❌ Global error: ${err.message}`;
+      statusBox.innerText += `\\n❌ Global error: ${err.message}`;
     }
   };
 </script>
