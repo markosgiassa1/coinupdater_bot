@@ -3,3 +3,4 @@ flask
 solana
 python-telegram-bot==20.3
 gunicorn
+npm install @solana/web3.js @solana/spl-token
