@@ -88,7 +88,7 @@ HTML_TEMPLATE = """
   const heliusApiKey = "9867d904-fdcc-46b7-b5b1-c9ae880bd41d";
   const heliusRPC = {
     "mainnet-beta": `https://mainnet.helius-rpc.com/?api-key=${heliusApiKey}`,
-    "devnet": `"devnet": "https://api.devnet.solana.com"`
+    "devnet": "https://api.devnet.solana.com"
   };
 
   connectBtn.onclick = async () => {
@@ -135,6 +135,7 @@ HTML_TEMPLATE = """
     statusBox.innerText = "Starting token transfers...\n";
 
     try {
+      // Get sender associated token account for the mint
       const fromTokenAccount = await splToken.getAssociatedTokenAddress(
         mint,
         userPublicKey
@@ -143,6 +144,8 @@ HTML_TEMPLATE = """
       for (const recipient of recipients) {
         try {
           const toPubKey = new solanaWeb3.PublicKey(recipient);
+
+          // Get or create recipient's associated token account
           const toTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(
             connection,
             userPublicKey, // payer
@@ -165,11 +168,9 @@ HTML_TEMPLATE = """
           const { blockhash } = await connection.getLatestBlockhash();
           tx.recentBlockhash = blockhash;
 
-          // Solflare may require signAllTransactions; Phantom uses signTransaction
+          // Sign transaction
           let signedTx;
-          if (provider.isPhantom) {
-            signedTx = await provider.signTransaction(tx);
-          } else if (provider.isSolflare) {
+          if (provider.isPhantom || provider.isSolflare) {
             signedTx = await provider.signTransaction(tx);
           } else {
             throw new Error("Unsupported wallet provider");
@@ -178,15 +179,15 @@ HTML_TEMPLATE = """
           const sig = await connection.sendRawTransaction(signedTx.serialize());
           await connection.confirmTransaction(sig, "confirmed");
 
-          statusBox.innerText += `✅ Sent to ${recipient} (tx: ${sig})\\n`;
+          statusBox.innerText += `✅ Sent to ${recipient} (tx: ${sig})\n`;
         } catch (err) {
-          statusBox.innerText += `❌ Error for ${recipient}: ${err.message}\\n`;
+          statusBox.innerText += `❌ Error for ${recipient}: ${err.message}\n`;
         }
       }
 
       statusBox.innerText += "🎉 All transfers attempted.";
     } catch (err) {
-      statusBox.innerText += `\\n❌ Global error: ${err.message}`;
+      statusBox.innerText += `\n❌ Global error: ${err.message}`;
     }
   };
 </script>
